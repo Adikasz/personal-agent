@@ -1,0 +1,14 @@
+anthropic>=0.40.0
+pydantic-settings>=2.5.0
+
+# --- Web senses (search + scrape) ---
+httpx>=0.27.0
+beautifulsoup4>=4.12.0
+duckduckgo-search>=6.0.0
+
+# --- Enterprise memory (RAG + embeddings) ---
+openai>=1.50.0
+# NOTE: The official Pinecone SDK was renamed from `pinecone-client` to
+# `pinecone` in the 5.x line. The 6.x `pinecone-client` package is now a
+# no-op shim that raises on import, so we depend on `pinecone` directly.
+pinecone>=5.0.0

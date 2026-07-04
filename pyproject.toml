@@ -1,0 +1,93 @@
+# =============================================================================
+# PlanSmart Personal Assistant — project configuration
+# =============================================================================
+# This file is the single source of truth for tool configuration
+# (pytest, ruff, mypy). Runtime and dev dependencies live in
+# `requirements.txt` and `requirements-dev.txt` respectively.
+# =============================================================================
+
+
+# -----------------------------------------------------------------------------
+# Pytest
+# -----------------------------------------------------------------------------
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+pythonpath = ["."]
+asyncio_mode = "auto"
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "-ra",
+    "--strict-markers",
+    "--strict-config",
+    "--tb=short",
+]
+filterwarnings = [
+    "error",
+    "ignore::DeprecationWarning:pydantic.*",
+]
+
+
+# -----------------------------------------------------------------------------
+# Ruff (lint + format)
+# -----------------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = [".venv", "build", "dist"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "B",    # flake8-bugbear
+    "UP",   # pyupgrade
+    "C4",   # flake8-comprehensions
+    "SIM",  # flake8-simplify
+    "RUF",  # ruff-specific
+]
+ignore = [
+    "E501",  # long lines are handled by the formatter
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = [
+    "S101",   # assert statements are the point of a test
+    "SLF001", # accessing private members is allowed in white-box tests
+]
+"__init__.py" = ["F401"]  # re-exports are intentional
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
+
+
+# -----------------------------------------------------------------------------
+# Mypy (static type checking)
+# -----------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = false
+show_error_codes = true
+pretty = true
+exclude = ['^build/', '^dist/']
+
+# Third-party stubs vary in quality; be lenient at the boundary.
+[[tool.mypy.overrides]]
+module = ["anthropic.*"]
+ignore_missing_imports = true
+
+# Pydantic-settings supports the private `_env_file` kwarg at runtime but does
+# not expose it in its type stubs. Allow it in tests without scattering
+# per-line ignores.
+[[tool.mypy.overrides]]
+module = ["tests.*"]
+disable_error_code = ["call-arg"]
