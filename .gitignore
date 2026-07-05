@@ -39,3 +39,6 @@ htmlcov/
 # --- Logs ---
 *.log
 logs/
+
+# --- Local WAT Agent Data ---
+.tmp/
