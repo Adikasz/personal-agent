@@ -1,0 +1,6 @@
+# Normalize line endings across platforms. The repository stores text as
+# LF, matching ruff's `line-ending = "lf"` format config, so
+# `ruff format --check` passes on the Linux CI runner regardless of the
+# contributor's OS. `eol=lf` also normalizes Windows checkouts to LF,
+# eliminating CRLF churn introduced by `core.autocrlf`.
+* text=auto eol=lf

@@ -24,9 +24,7 @@ def _reset_logging_state(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     original_handlers = root.handlers[:]
     original_level = root.level
     root.handlers[:] = [
-        handler
-        for handler in root.handlers
-        if not logger_module._is_managed(handler)
+        handler for handler in root.handlers if not logger_module._is_managed(handler)
     ]
     try:
         yield
@@ -108,16 +106,12 @@ class TestGetLogger:
         assert isinstance(log, logging.Logger)
         assert log.name == "plansmart.test"
 
-    def test_auto_configures_on_first_call(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_auto_configures_on_first_call(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(logger_module, "_configured", False)
         get_logger("plansmart.autoconfig")
         assert logger_module._configured is True
 
-    def test_emitted_records_are_captured(
-        self, caplog: pytest.LogCaptureFixture
-    ) -> None:
+    def test_emitted_records_are_captured(self, caplog: pytest.LogCaptureFixture) -> None:
         configure_logging(level="INFO")
         log = get_logger("plansmart.emit")
         with caplog.at_level(logging.INFO, logger="plansmart.emit"):

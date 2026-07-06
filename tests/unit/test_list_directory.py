@@ -76,9 +76,7 @@ class TestHappyPath:
             DirEntry(name="gamma", kind="directory"),
         ]
 
-    def test_subdirectory_listing_returns_child_entries(
-        self, sandbox: Path
-    ) -> None:
+    def test_subdirectory_listing_returns_child_entries(self, sandbox: Path) -> None:
         result = list_directory(
             ListDirectoryQuery(relative_path="gamma"),
             project_root=sandbox,
@@ -86,18 +84,14 @@ class TestHappyPath:
         assert result.relative_path == "gamma"
         assert result.entries == [DirEntry(name="inside.txt", kind="file")]
 
-    def test_dotdot_navigation_that_stays_inside_is_supported(
-        self, sandbox: Path
-    ) -> None:
+    def test_dotdot_navigation_that_stays_inside_is_supported(self, sandbox: Path) -> None:
         result = list_directory(
             ListDirectoryQuery(relative_path="gamma/.."),
             project_root=sandbox,
         )
         assert result.relative_path == "."
 
-    def test_empty_directory_returns_empty_entry_list(
-        self, tmp_path: Path
-    ) -> None:
+    def test_empty_directory_returns_empty_entry_list(self, tmp_path: Path) -> None:
         result = list_directory(
             ListDirectoryQuery(relative_path="."),
             project_root=tmp_path,
@@ -109,18 +103,14 @@ class TestHappyPath:
 class TestErrorCases:
     """Non-existent targets and wrong types raise typed exceptions."""
 
-    def test_missing_directory_raises_file_not_found(
-        self, sandbox: Path
-    ) -> None:
+    def test_missing_directory_raises_file_not_found(self, sandbox: Path) -> None:
         with pytest.raises(FileNotFoundError):
             list_directory(
                 ListDirectoryQuery(relative_path="does-not-exist"),
                 project_root=sandbox,
             )
 
-    def test_listing_a_file_raises_not_a_directory(
-        self, sandbox: Path
-    ) -> None:
+    def test_listing_a_file_raises_not_a_directory(self, sandbox: Path) -> None:
         with pytest.raises(NotADirectoryError):
             list_directory(
                 ListDirectoryQuery(relative_path="alpha.txt"),
@@ -156,9 +146,7 @@ class TestPathTraversalBlocked:
 class TestTruncation:
     """Oversized listings must set `truncated=True` and cap entry count."""
 
-    def test_truncation_is_reported_when_entries_exceed_limit(
-        self, tmp_path: Path
-    ) -> None:
+    def test_truncation_is_reported_when_entries_exceed_limit(self, tmp_path: Path) -> None:
         for index in range(6):
             (tmp_path / f"file-{index}.txt").write_text("x", encoding="utf-8")
         result = list_directory(

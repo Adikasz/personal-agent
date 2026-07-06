@@ -23,7 +23,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -80,9 +80,7 @@ class TestMorningBriefingWorkflowLoop:
         # this test is not contaminated by real notes on disk.
         empty_notes = tmp_path / "notes"
         empty_notes.mkdir()
-        monkeypatch.setattr(
-            "tools.search_notes.DEFAULT_NOTES_DIR", empty_notes
-        )
+        monkeypatch.setattr("tools.search_notes.DEFAULT_NOTES_DIR", empty_notes)
 
         # Scripted LLM: discover workflows, read the briefing SOP,
         # search for prior priorities, then respond with a final text.
@@ -102,9 +100,7 @@ class TestMorningBriefingWorkflowLoop:
                 "search_notes",
                 {"query": "priorities"},
             ),
-            _text_response(
-                "No prior priorities on file — let's start with an intake question."
-            ),
+            _text_response("No prior priorities on file — let's start with an intake question."),
         ]
 
         with patch("agents.personal_assistant.AsyncAnthropic") as client_cls:
@@ -183,9 +179,7 @@ def _last_tool_result(call_record: Any) -> dict[str, Any]:
         "The turn following a tool_use must be a user message carrying "
         f"tool_result blocks; got {last['role']!r}"
     )
-    assert isinstance(last["content"], list), (
-        "tool_result carrier must have block-list content"
-    )
+    assert isinstance(last["content"], list), "tool_result carrier must have block-list content"
     block = last["content"][0]
     assert block["type"] == "tool_result"
-    return block
+    return cast("dict[str, Any]", block)

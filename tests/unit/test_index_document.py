@@ -34,9 +34,7 @@ def _fake_store(
     if embedding_error is not None:
         store.generate_embedding = AsyncMock(side_effect=embedding_error)
     else:
-        store.generate_embedding = AsyncMock(
-            return_value=embedding or [0.1, 0.2, 0.3]
-        )
+        store.generate_embedding = AsyncMock(return_value=embedding or [0.1, 0.2, 0.3])
     if upsert_error is not None:
         store.upsert = AsyncMock(side_effect=upsert_error)
     else:
@@ -48,9 +46,7 @@ class TestQueryValidation:
     """`IndexDocumentQuery` enforces a strict, minimal input contract."""
 
     def test_valid_query_round_trips(self) -> None:
-        query = IndexDocumentQuery(
-            content="body", metadata={"source": "notes/x.md"}
-        )
+        query = IndexDocumentQuery(content="body", metadata={"source": "notes/x.md"})
         assert query.content == "body"
         assert query.metadata == {"source": "notes/x.md"}
 
@@ -101,9 +97,7 @@ class TestHappyPath:
         assert result.error is None
         assert result.content_length == len("career architect notes")
         assert len(result.vector_id) == 32
-        store.generate_embedding.assert_awaited_once_with(
-            "career architect notes"
-        )
+        store.generate_embedding.assert_awaited_once_with("career architect notes")
         store.upsert.assert_awaited_once()
         upsert_args = store.upsert.await_args
         assert upsert_args.args[0] == result.vector_id
@@ -116,15 +110,11 @@ class TestHappyPath:
         store_a = _fake_store()
         store_b = _fake_store()
         result_a = await index_document(
-            IndexDocumentQuery(
-                content="same body", metadata={"source": "notes/x.md"}
-            ),
+            IndexDocumentQuery(content="same body", metadata={"source": "notes/x.md"}),
             store=store_a,
         )
         result_b = await index_document(
-            IndexDocumentQuery(
-                content="same body", metadata={"source": "notes/x.md"}
-            ),
+            IndexDocumentQuery(content="same body", metadata={"source": "notes/x.md"}),
             store=store_b,
         )
         assert result_a.vector_id == result_b.vector_id
@@ -133,15 +123,11 @@ class TestHappyPath:
         store_a = _fake_store()
         store_b = _fake_store()
         result_a = await index_document(
-            IndexDocumentQuery(
-                content="same body", metadata={"source": "notes/one.md"}
-            ),
+            IndexDocumentQuery(content="same body", metadata={"source": "notes/one.md"}),
             store=store_a,
         )
         result_b = await index_document(
-            IndexDocumentQuery(
-                content="same body", metadata={"source": "notes/two.md"}
-            ),
+            IndexDocumentQuery(content="same body", metadata={"source": "notes/two.md"}),
             store=store_b,
         )
         assert result_a.vector_id != result_b.vector_id
@@ -151,15 +137,11 @@ class TestHappyPath:
         store_filepath = _fake_store()
 
         result_url = await index_document(
-            IndexDocumentQuery(
-                content="body", metadata={"url": "https://example.com"}
-            ),
+            IndexDocumentQuery(content="body", metadata={"url": "https://example.com"}),
             store=store_url,
         )
         result_filepath = await index_document(
-            IndexDocumentQuery(
-                content="body", metadata={"filepath": "notes/x.md"}
-            ),
+            IndexDocumentQuery(content="body", metadata={"filepath": "notes/x.md"}),
             store=store_filepath,
         )
         # Different sources → different ids.
@@ -168,9 +150,7 @@ class TestHappyPath:
     async def test_content_preview_is_capped_at_configured_length(self) -> None:
         long_content = "x" * 5_000
         store = _fake_store()
-        await index_document(
-            IndexDocumentQuery(content=long_content), store=store
-        )
+        await index_document(IndexDocumentQuery(content=long_content), store=store)
         stored_metadata = store.upsert.await_args.args[2]
         assert len(stored_metadata["content_preview"]) == 2_000
 
@@ -178,34 +158,26 @@ class TestHappyPath:
 class TestFailureSurface:
     async def test_vector_store_error_on_embedding_is_captured(self) -> None:
         store = _fake_store(embedding_error=VectorStoreError("OpenAI down"))
-        result = await index_document(
-            IndexDocumentQuery(content="body"), store=store
-        )
+        result = await index_document(IndexDocumentQuery(content="body"), store=store)
         assert result.error is not None
         assert "OpenAI down" in result.error
         assert result.content_length == len("body")
 
     async def test_vector_store_error_on_upsert_is_captured(self) -> None:
         store = _fake_store(upsert_error=VectorStoreError("Pinecone quota"))
-        result = await index_document(
-            IndexDocumentQuery(content="body"), store=store
-        )
+        result = await index_document(IndexDocumentQuery(content="body"), store=store)
         assert result.error is not None
         assert "Pinecone quota" in result.error
 
     async def test_value_error_from_store_is_captured(self) -> None:
         store = _fake_store(embedding_error=ValueError("Cannot embed"))
-        result = await index_document(
-            IndexDocumentQuery(content="body"), store=store
-        )
+        result = await index_document(IndexDocumentQuery(content="body"), store=store)
         assert result.error is not None
         assert "Cannot embed" in result.error
 
 
 class TestResultShape:
     def test_result_is_frozen(self) -> None:
-        result = IndexDocumentResult(
-            vector_id="abc", content_length=3, error=None
-        )
+        result = IndexDocumentResult(vector_id="abc", content_length=3, error=None)
         with pytest.raises(ValidationError):
             result.vector_id = "changed"  # type: ignore[misc]

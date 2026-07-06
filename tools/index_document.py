@@ -59,10 +59,7 @@ class IndexDocumentQuery(BaseModel):
         ...,
         min_length=1,
         max_length=_MAX_CONTENT_LENGTH,
-        description=(
-            "Text body to embed and store. Whitespace-only inputs are "
-            "rejected."
-        ),
+        description=("Text body to embed and store. Whitespace-only inputs are rejected."),
     )
     metadata: dict[str, Any] = Field(
         default_factory=dict,
@@ -76,18 +73,14 @@ class IndexDocumentQuery(BaseModel):
     @classmethod
     def _content_is_non_blank(cls, value: str) -> str:
         if not value.strip():
-            raise ValueError(
-                "content must contain at least one non-whitespace character"
-            )
+            raise ValueError("content must contain at least one non-whitespace character")
         return value
 
     @field_validator("metadata")
     @classmethod
     def _metadata_bounds(cls, values: dict[str, Any]) -> dict[str, Any]:
         if len(values) > _MAX_METADATA_KEYS:
-            raise ValueError(
-                f"metadata may have at most {_MAX_METADATA_KEYS} keys"
-            )
+            raise ValueError(f"metadata may have at most {_MAX_METADATA_KEYS} keys")
         return values
 
 
@@ -144,9 +137,7 @@ async def index_document(
             error=str(exc),
         )
 
-    _logger.info(
-        "index_document indexed %d char(s) as %s.", len(query.content), vector_id
-    )
+    _logger.info("index_document indexed %d char(s) as %s.", len(query.content), vector_id)
     return IndexDocumentResult(
         vector_id=vector_id,
         content_length=len(query.content),
@@ -158,12 +149,7 @@ def _derive_vector_id(content: str, metadata: dict[str, Any]) -> str:
     """Compute a stable content-plus-source vector id."""
     hasher = hashlib.sha256()
     hasher.update(content.encode("utf-8"))
-    source = (
-        metadata.get("source")
-        or metadata.get("url")
-        or metadata.get("filepath")
-        or ""
-    )
+    source = metadata.get("source") or metadata.get("url") or metadata.get("filepath") or ""
     hasher.update(b"\x00")
     hasher.update(str(source).encode("utf-8"))
     return hasher.hexdigest()[:32]

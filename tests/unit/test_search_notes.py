@@ -114,9 +114,7 @@ class TestQueryValidation:
 class TestSearchBehaviour:
     """`search_notes` returns structured, well-formed matches."""
 
-    def test_missing_directory_returns_empty_result(
-        self, tmp_path: Path
-    ) -> None:
+    def test_missing_directory_returns_empty_result(self, tmp_path: Path) -> None:
         result = search_notes(
             SearchNotesQuery(query="anything"),
             base_dir=tmp_path / "does-not-exist",
@@ -148,9 +146,7 @@ class TestSearchBehaviour:
         slugs = [match.slug for match in result.matches]
         assert "standup" in slugs
 
-    def test_no_match_returns_empty_but_still_reports_scanned(
-        self, populated_notes: Path
-    ) -> None:
+    def test_no_match_returns_empty_but_still_reports_scanned(self, populated_notes: Path) -> None:
         result = search_notes(
             SearchNotesQuery(query="blockchain"),
             base_dir=populated_notes,
@@ -180,9 +176,7 @@ class TestSearchBehaviour:
         )
         assert result.matches == []
 
-    def test_limit_truncates_matches(
-        self, tmp_path: Path, frozen_today: date
-    ) -> None:
+    def test_limit_truncates_matches(self, tmp_path: Path, frozen_today: date) -> None:
         for index in range(5):
             save_note(
                 NoteSchema(
@@ -231,9 +225,7 @@ class TestSearchBehaviour:
 
         original_read_text = Path.read_text
 
-        def _read_text(
-            self: Path, *args: object, **kwargs: object
-        ) -> str:
+        def _read_text(self: Path, *args: object, **kwargs: object) -> str:
             if self.name == "2026-07-04-broken.md":
                 raise OSError("permission denied")
             return original_read_text(self, *args, **kwargs)  # type: ignore[arg-type]
@@ -247,9 +239,7 @@ class TestSearchBehaviour:
         assert result.scanned == 2
         assert [match.slug for match in result.matches] == ["ok"]
 
-    def test_third_party_file_without_frontmatter_is_still_searchable(
-        self, tmp_path: Path
-    ) -> None:
+    def test_third_party_file_without_frontmatter_is_still_searchable(self, tmp_path: Path) -> None:
         (tmp_path / "2026-07-04-external.md").write_text(
             "no frontmatter here, but the word roadmap still appears.",
             encoding="utf-8",

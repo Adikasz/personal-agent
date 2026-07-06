@@ -18,16 +18,12 @@ class TestSettingsLoading:
         settings = Settings(_env_file=None)
         assert settings.anthropic_api_key.get_secret_value() == "sk-test-123"
 
-    def test_missing_api_key_raises_validation_error(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_missing_api_key_raises_validation_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
         with pytest.raises(ValidationError):
             Settings(_env_file=None)
 
-    def test_env_variables_are_case_insensitive(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_env_variables_are_case_insensitive(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("anthropic_api_key", "sk-lower")
         settings = Settings(_env_file=None)
         assert settings.anthropic_api_key.get_secret_value() == "sk-lower"
@@ -36,9 +32,7 @@ class TestSettingsLoading:
 class TestSecretMasking:
     """The API key must never leak through repr / str."""
 
-    def test_secret_is_masked_in_repr(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_secret_is_masked_in_repr(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-secret-value")
         settings = Settings(_env_file=None)
         assert "sk-secret-value" not in repr(settings)
@@ -48,9 +42,7 @@ class TestSecretMasking:
 class TestDefaults:
     """Sensible defaults must be applied when env vars are absent."""
 
-    def test_default_model_identifier(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_default_model_identifier(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
         settings = Settings(_env_file=None)
         assert settings.anthropic_model == "claude-opus-4-7"
@@ -65,9 +57,7 @@ class TestDefaults:
         settings = Settings(_env_file=None)
         assert settings.log_level == "INFO"
 
-    def test_default_max_history_turns(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_default_max_history_turns(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
         settings = Settings(_env_file=None)
         assert settings.max_history_turns == 20
@@ -76,33 +66,25 @@ class TestDefaults:
 class TestValidation:
     """Field-level validators guard against nonsense values."""
 
-    def test_zero_max_tokens_is_rejected(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_zero_max_tokens_is_rejected(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
         monkeypatch.setenv("ANTHROPIC_MAX_TOKENS", "0")
         with pytest.raises(ValidationError):
             Settings(_env_file=None)
 
-    def test_overly_large_max_tokens_is_rejected(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_overly_large_max_tokens_is_rejected(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
         monkeypatch.setenv("ANTHROPIC_MAX_TOKENS", "99999")
         with pytest.raises(ValidationError):
             Settings(_env_file=None)
 
-    def test_zero_history_turns_is_rejected(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_zero_history_turns_is_rejected(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
         monkeypatch.setenv("MAX_HISTORY_TURNS", "0")
         with pytest.raises(ValidationError):
             Settings(_env_file=None)
 
-    def test_history_turns_from_env(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_history_turns_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
         monkeypatch.setenv("MAX_HISTORY_TURNS", "6")
         settings = Settings(_env_file=None)
@@ -133,9 +115,7 @@ class TestResolvedKnowledgeDir:
 class TestGetSettings:
     """The `get_settings` accessor must return a cached singleton."""
 
-    def test_returns_same_instance_on_repeated_calls(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_returns_same_instance_on_repeated_calls(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
         first = get_settings()
         second = get_settings()

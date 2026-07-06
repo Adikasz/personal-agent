@@ -46,9 +46,7 @@ def _shorten(value: Any, limit: int = _SHORT_LIMIT) -> str:
 def _on_tool_use(name: str, tool_input: dict[str, Any]) -> None:
     """Announce that the model has requested a tool invocation."""
     if tool_input:
-        rendered = ", ".join(
-            f"{key}={_shorten(value, 40)}" for key, value in tool_input.items()
-        )
+        rendered = ", ".join(f"{key}={_shorten(value, 40)}" for key, value in tool_input.items())
         _emit("[agent]", f"calling tool: {name}({rendered})")
     else:
         _emit("[agent]", f"calling tool: {name}()")

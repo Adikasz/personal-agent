@@ -56,10 +56,7 @@ def _has_block_of_type(message: MessageParam, block_type: str) -> bool:
     content = message.get("content")
     if not isinstance(content, list):
         return False
-    return any(
-        isinstance(block, dict) and block.get("type") == block_type
-        for block in content
-    )
+    return any(isinstance(block, dict) and block.get("type") == block_type for block in content)
 
 
 def _iter_atoms(messages: Sequence[MessageParam]) -> Iterator[_Atom]:
@@ -68,16 +65,12 @@ def _iter_atoms(messages: Sequence[MessageParam]) -> Iterator[_Atom]:
     length = len(messages)
     while index < length:
         current = messages[index]
-        is_tool_call = (
-            current.get("role") == "assistant"
-            and _has_block_of_type(current, "tool_use")
+        is_tool_call = current.get("role") == "assistant" and _has_block_of_type(
+            current, "tool_use"
         )
         if is_tool_call and index + 1 < length:
             follower = messages[index + 1]
-            if (
-                follower.get("role") == "user"
-                and _has_block_of_type(follower, "tool_result")
-            ):
+            if follower.get("role") == "user" and _has_block_of_type(follower, "tool_result"):
                 yield _Atom((current, follower))
                 index += 2
                 continue

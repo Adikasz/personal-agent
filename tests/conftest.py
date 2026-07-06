@@ -10,6 +10,8 @@ exercise the missing-key path can override the defaults with
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import pytest
 
 from core.config import get_settings
@@ -29,15 +31,21 @@ _ENV_VARS_UNDER_TEST: tuple[str, ...] = (
 )
 
 _INJECTED_DEFAULTS: dict[str, str] = {
-    # Dummies for the required secret keys so tests unrelated to the
-    # config layer can construct `Settings` without extra ceremony.
+    # Dummies for the three required secret keys so tests unrelated to the
+    # config layer can construct `Settings` (directly or via `get_settings`)
+    # without any real credentials. Every key `Settings` marks as required
+    # must appear here, otherwise the suite silently depends on a local
+    # `.env` and breaks on a CI runner that has neither the file nor the
+    # variables exported. Tests that specifically exercise the missing-key
+    # path override these with `monkeypatch.delenv(...)`.
+    "ANTHROPIC_API_KEY": "sk-ant-test",
     "OPENAI_API_KEY": "sk-test-openai",
     "PINECONE_API_KEY": "pc-test-pinecone",
 }
 
 
 @pytest.fixture(autouse=True)
-def _isolated_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+def _isolated_settings(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """Guarantee a fresh `Settings` cache and a clean environment per test."""
     for var in _ENV_VARS_UNDER_TEST:
         monkeypatch.delenv(var, raising=False)

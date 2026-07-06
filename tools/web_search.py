@@ -53,8 +53,7 @@ class WebSearchQuery(BaseModel):
         min_length=1,
         max_length=_MAX_QUERY_LENGTH,
         description=(
-            "Free-form search query submitted to DuckDuckGo. "
-            "Whitespace-only queries are rejected."
+            "Free-form search query submitted to DuckDuckGo. Whitespace-only queries are rejected."
         ),
     )
     max_results: int = Field(
@@ -115,7 +114,7 @@ async def web_search(query: WebSearchQuery) -> WebSearchResult:
     """
     try:
         raw = await asyncio.to_thread(_run_ddgs, query.query, query.max_results)
-    except Exception as exc:  # noqa: BLE001 — network faults must reach the LLM
+    except Exception as exc:
         message = f"{type(exc).__name__}: {exc}"
         _logger.warning("DDGS failed for %r: %s", query.query, message)
         return WebSearchResult(query=query.query, results=[], error=message)
@@ -124,7 +123,7 @@ async def web_search(query: WebSearchQuery) -> WebSearchResult:
     for item in raw:
         try:
             hits.append(SearchHit.model_validate(item))
-        except Exception as exc:  # noqa: BLE001 — skip malformed row, keep going
+        except Exception as exc:
             _logger.warning("Skipping malformed DDGS row %r: %s", item, exc)
             continue
 

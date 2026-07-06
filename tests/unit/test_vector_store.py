@@ -9,6 +9,7 @@ deterministically.
 
 from __future__ import annotations
 
+from dataclasses import FrozenInstanceError
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -40,9 +41,7 @@ class TestGenerateEmbedding:
     async def test_returns_embedding_vector_on_success(self) -> None:
         fake_openai = AsyncMock()
         fake_openai.embeddings.create = AsyncMock(
-            return_value=SimpleNamespace(
-                data=[SimpleNamespace(embedding=[0.1, 0.2, 0.3])]
-            )
+            return_value=SimpleNamespace(data=[SimpleNamespace(embedding=[0.1, 0.2, 0.3])])
         )
         store = _build_store(openai_client=fake_openai)
 
@@ -66,9 +65,7 @@ class TestGenerateEmbedding:
 
     async def test_openai_exception_is_wrapped_as_vector_store_error(self) -> None:
         fake_openai = AsyncMock()
-        fake_openai.embeddings.create = AsyncMock(
-            side_effect=RuntimeError("429 Too Many Requests")
-        )
+        fake_openai.embeddings.create = AsyncMock(side_effect=RuntimeError("429 Too Many Requests"))
         store = _build_store(openai_client=fake_openai)
         with pytest.raises(VectorStoreError) as exc_info:
             await store.generate_embedding("hello")
@@ -77,9 +74,7 @@ class TestGenerateEmbedding:
     async def test_malformed_openai_response_is_wrapped(self) -> None:
         fake_openai = AsyncMock()
         # `data` list is empty, so `data[0]` raises IndexError.
-        fake_openai.embeddings.create = AsyncMock(
-            return_value=SimpleNamespace(data=[])
-        )
+        fake_openai.embeddings.create = AsyncMock(return_value=SimpleNamespace(data=[]))
         store = _build_store(openai_client=fake_openai)
         with pytest.raises(VectorStoreError):
             await store.generate_embedding("hello")
@@ -92,12 +87,8 @@ class TestSemanticSearch:
         fake_index = MagicMock()
         fake_index.query.return_value = SimpleNamespace(
             matches=[
-                SimpleNamespace(
-                    id="doc-1", score=0.98, metadata={"source": "notes/one.md"}
-                ),
-                SimpleNamespace(
-                    id="doc-2", score=0.71, metadata={"source": "notes/two.md"}
-                ),
+                SimpleNamespace(id="doc-1", score=0.98, metadata={"source": "notes/one.md"}),
+                SimpleNamespace(id="doc-2", score=0.71, metadata={"source": "notes/two.md"}),
             ]
         )
         store = _build_store(pinecone_index=fake_index)
@@ -108,23 +99,17 @@ class TestSemanticSearch:
             VectorMatch(id="doc-1", score=0.98, metadata={"source": "notes/one.md"}),
             VectorMatch(id="doc-2", score=0.71, metadata={"source": "notes/two.md"}),
         ]
-        fake_index.query.assert_called_once_with(
-            vector=[0.1, 0.2], top_k=3, include_metadata=True
-        )
+        fake_index.query.assert_called_once_with(vector=[0.1, 0.2], top_k=3, include_metadata=True)
 
     async def test_returns_matches_from_dict_shape(self) -> None:
         fake_index = MagicMock()
         fake_index.query.return_value = {
-            "matches": [
-                {"id": "d", "score": 0.5, "metadata": {"tag": "career"}}
-            ]
+            "matches": [{"id": "d", "score": 0.5, "metadata": {"tag": "career"}}]
         }
         store = _build_store(pinecone_index=fake_index)
 
         matches = await store.semantic_search([0.0], top_k=1)
-        assert matches == [
-            VectorMatch(id="d", score=0.5, metadata={"tag": "career"})
-        ]
+        assert matches == [VectorMatch(id="d", score=0.5, metadata={"tag": "career"})]
 
     async def test_missing_matches_field_yields_empty_list(self) -> None:
         fake_index = MagicMock()
@@ -148,9 +133,7 @@ class TestSemanticSearch:
 
     async def test_metadata_none_is_normalized_to_empty_dict(self) -> None:
         fake_index = MagicMock()
-        fake_index.query.return_value = {
-            "matches": [{"id": "x", "score": 0.1, "metadata": None}]
-        }
+        fake_index.query.return_value = {"matches": [{"id": "x", "score": 0.1, "metadata": None}]}
         store = _build_store(pinecone_index=fake_index)
         matches = await store.semantic_search([0.1])
         assert matches[0].metadata == {}
@@ -188,9 +171,10 @@ class TestConstruction:
     """Default vendor-client construction uses the injected settings."""
 
     def test_default_constructor_wires_settings_derived_clients(self) -> None:
-        with patch("utils.vector_store.AsyncOpenAI") as fake_openai_cls, patch(
-            "utils.vector_store.Pinecone"
-        ) as fake_pinecone_cls:
+        with (
+            patch("utils.vector_store.AsyncOpenAI") as fake_openai_cls,
+            patch("utils.vector_store.Pinecone") as fake_pinecone_cls,
+        ):
             store = VectorStore()
 
         fake_openai_cls.assert_called_once()
@@ -206,5 +190,5 @@ def _sanity_dataclass_shape() -> Any:
 class TestVectorMatch:
     def test_vector_match_is_frozen(self) -> None:
         match = _sanity_dataclass_shape()
-        with pytest.raises(Exception):
-            match.id = "changed"  # type: ignore[misc]
+        with pytest.raises(FrozenInstanceError):
+            match.id = "changed"

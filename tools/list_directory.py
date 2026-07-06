@@ -106,9 +106,7 @@ def list_directory(
     """
     resolved = resolve_within_project(query.relative_path, project_root=project_root)
     if not resolved.exists():
-        raise FileNotFoundError(
-            f"{query.relative_path!r} does not exist inside the project root."
-        )
+        raise FileNotFoundError(f"{query.relative_path!r} does not exist inside the project root.")
     if not resolved.is_dir():
         raise NotADirectoryError(f"{query.relative_path!r} is not a directory.")
 

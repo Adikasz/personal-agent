@@ -14,7 +14,7 @@ The assistant runs a bounded tool-use loop on every `ask()` call:
    to the caller — they are formatted and fed back to the model inside
    the corresponding `tool_result` block with `is_error=True`, allowing
    the model to reason about the failure and retry autonomously.
-4. Steps 1–3 repeat until the model returns a final answer or the
+4. Steps 1-3 repeat until the model returns a final answer or the
    configured iteration ceiling is reached.
 
 Conversation history is bounded by `Settings.max_history_turns` and
@@ -29,10 +29,10 @@ import inspect
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Final
+from typing import Any, Final, cast
 
 from anthropic import AsyncAnthropic
-from anthropic.types import MessageParam
+from anthropic.types import ContentBlockParam, MessageParam, ToolResultBlockParam
 from pydantic import BaseModel
 
 from core.config import Settings, get_settings
@@ -181,9 +181,7 @@ class PersonalAssistant:
     ) -> None:
         self._settings = settings or get_settings()
         self._logger = get_logger(self.__class__.__name__)
-        self._client = AsyncAnthropic(
-            api_key=self._settings.anthropic_api_key.get_secret_value()
-        )
+        self._client = AsyncAnthropic(api_key=self._settings.anthropic_api_key.get_secret_value())
         registered = tuple(tools) if tools is not None else _default_tools()
         self._tools: dict[str, ToolSpec] = {spec.name: spec for spec in registered}
         self._system_prompt: str = self._build_system_prompt()
@@ -234,9 +232,7 @@ class PersonalAssistant:
         final_text = ""
         for iteration in range(self._settings.max_tool_iterations):
             trimmed = trim_history(working, self._settings.max_history_turns)
-            response = await self._client.messages.create(
-                **self._build_create_kwargs(trimmed)
-            )
+            response = await self._client.messages.create(**self._build_create_kwargs(trimmed))
 
             content_blocks = list(response.content)
             working.append(self._assistant_message(content_blocks))
@@ -259,8 +255,7 @@ class PersonalAssistant:
             working.append({"role": "user", "content": tool_result_blocks})
         else:
             self._logger.warning(
-                "Tool-use loop hit the ceiling of %d iterations; returning a "
-                "graceful message.",
+                "Tool-use loop hit the ceiling of %d iterations; returning a graceful message.",
                 self._settings.max_tool_iterations,
             )
             final_text = (
@@ -308,9 +303,16 @@ class PersonalAssistant:
                 "role": "assistant",
                 "content": _extract_text(blocks),
             }
+        # Each block is serialized from a dynamic SDK object (or a test
+        # double) into a plain dict; the shape is correct but cannot be
+        # statically proven, so cast to the API's content-block union.
+        serialized = cast(
+            "list[ContentBlockParam]",
+            [_serialize_block(block) for block in blocks],
+        )
         return {
             "role": "assistant",
-            "content": [_serialize_block(block) for block in blocks],
+            "content": serialized,
         }
 
     async def _dispatch_tools(
@@ -319,7 +321,7 @@ class PersonalAssistant:
         *,
         on_tool_use: OnToolUse | None,
         on_tool_result: OnToolResult | None,
-    ) -> list[dict[str, Any]]:
+    ) -> list[ToolResultBlockParam]:
         """Execute every `tool_use` block and produce matching `tool_result`s.
 
         Tool calls are dispatched sequentially in emission order. Both
@@ -327,7 +329,7 @@ class PersonalAssistant:
         transparently: if `spec.call(validated)` returns an awaitable,
         it is awaited before the result is serialized.
         """
-        results: list[dict[str, Any]] = []
+        results: list[ToolResultBlockParam] = []
         for block in blocks:
             if getattr(block, "type", None) != "tool_use":
                 continue
@@ -346,7 +348,7 @@ class PersonalAssistant:
         *,
         on_tool_use: OnToolUse | None,
         on_tool_result: OnToolResult | None,
-    ) -> dict[str, Any]:
+    ) -> ToolResultBlockParam:
         """Execute a single tool call, capturing any failure as `is_error`."""
         tool_id = getattr(block, "id", "")
         tool_name = getattr(block, "name", "")
@@ -381,7 +383,9 @@ class PersonalAssistant:
                 "content": output_str,
                 "is_error": False,
             }
-        except Exception as exc:  # noqa: BLE001 — errors must reach the LLM
+        except Exception as exc:
+            # A tool failure must never crash the loop; it is surfaced to
+            # the model as an is_error tool_result so it can self-correct.
             error_str = _format_tool_error(exc)
             self._logger.warning(
                 "Tool %s failed (%s); surfacing to model.",
@@ -451,9 +455,7 @@ class PersonalAssistant:
 
     def _build_tool_manifest(self) -> str:
         """Render a compact listing of available tools for the LLM."""
-        lines: list[str] = [
-            "Available tools (call only when the user's request warrants it):"
-        ]
+        lines: list[str] = ["Available tools (call only when the user's request warrants it):"]
         for spec in self._tools.values():
             first_sentence = spec.description.split(". ", 1)[0].rstrip(".")
             lines.append(f"  - {spec.name}: {first_sentence}.")
@@ -481,9 +483,7 @@ class PersonalAssistant:
 def _extract_text(blocks: Iterable[Any]) -> str:
     """Concatenate the text of every `type == "text"` block."""
     return "".join(
-        getattr(block, "text", "")
-        for block in blocks
-        if getattr(block, "type", None) == "text"
+        getattr(block, "text", "") for block in blocks if getattr(block, "type", None) == "text"
     )
 
 

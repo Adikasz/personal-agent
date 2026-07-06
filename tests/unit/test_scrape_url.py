@@ -49,37 +49,48 @@ def _fake_client(
     return client
 
 
+def _q(url: str) -> ScrapeUrlQuery:
+    """Build a query from a raw URL string via the canonical validator.
+
+    ``ScrapeUrlQuery.url`` is typed ``HttpUrl``, so the generated
+    constructor signature expects an already-parsed URL. Routing through
+    ``model_validate`` performs the exact string->HttpUrl coercion the
+    agent relies on at runtime while keeping the call type-correct.
+    """
+    return ScrapeUrlQuery.model_validate({"url": url})
+
+
 class TestQueryValidation:
     """`ScrapeUrlQuery` enforces the LLM-facing input contract."""
 
     def test_valid_https_url_round_trips(self) -> None:
-        query = ScrapeUrlQuery(url="https://example.com/page")
+        query = _q("https://example.com/page")
         assert str(query.url).startswith("https://example.com/page")
 
     def test_valid_http_url_round_trips(self) -> None:
-        query = ScrapeUrlQuery(url="http://example.com")
+        query = _q("http://example.com")
         assert str(query.url).startswith("http://example.com")
 
     def test_missing_scheme_is_rejected(self) -> None:
         with pytest.raises(ValidationError):
-            ScrapeUrlQuery(url="example.com/no-scheme")
+            _q("example.com/no-scheme")
 
     def test_ftp_scheme_is_rejected(self) -> None:
         with pytest.raises(ValidationError):
-            ScrapeUrlQuery(url="ftp://example.com/file")
+            _q("ftp://example.com/file")
 
     def test_empty_url_is_rejected(self) -> None:
         with pytest.raises(ValidationError):
-            ScrapeUrlQuery(url="")
+            _q("")
 
     def test_extra_fields_are_forbidden(self) -> None:
         with pytest.raises(ValidationError):
-            ScrapeUrlQuery(url="https://example.com", nonsense="x")  # type: ignore[call-arg]
+            ScrapeUrlQuery.model_validate({"url": "https://example.com", "nonsense": "x"})
 
     def test_query_is_immutable(self) -> None:
-        query = ScrapeUrlQuery(url="https://example.com")
+        query = _q("https://example.com")
         with pytest.raises(ValidationError):
-            query.url = "https://tampered.com"  # type: ignore[misc]
+            query.url = "https://tampered.com"  # type: ignore[assignment]
 
 
 class TestHappyPath:
@@ -96,7 +107,7 @@ class TestHappyPath:
         client = _fake_client(html=html, status_code=200)
 
         result = await scrape_url(
-            ScrapeUrlQuery(url="https://example.com/x"),
+            _q("https://example.com/x"),
             client=client,
         )
 
@@ -123,7 +134,7 @@ class TestHappyPath:
         client = _fake_client(html=html)
 
         result = await scrape_url(
-            ScrapeUrlQuery(url="https://example.com"),
+            _q("https://example.com"),
             client=client,
         )
 
@@ -135,15 +146,18 @@ class TestHappyPath:
         html = "<html><body><p>a</p><p></p><p>b</p></body></html>"
         client = _fake_client(html=html)
         result = await scrape_url(
-            ScrapeUrlQuery(url="https://example.com"),
+            _q("https://example.com"),
             client=client,
         )
         assert result.text == "a\nb"
 
-    async def test_default_client_is_closed_when_no_override(self) -> None:
+    async def test_default_client_is_closed_when_no_override(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """When the tool constructs its own client it must aclose it."""
-        # Use a monkeypatch of httpx.AsyncClient so we can spy on the
-        # constructor and the aclose call without exercising the network.
+        # Patch httpx.AsyncClient so we can spy on the constructor and the
+        # aclose call without exercising the network. monkeypatch restores
+        # the original attribute automatically at teardown.
         html = "<html><body>ok</body></html>"
         constructed_clients: list[AsyncMock] = []
 
@@ -152,14 +166,8 @@ class TestHappyPath:
             constructed_clients.append(client)
             return client
 
-        original = httpx.AsyncClient
-        httpx.AsyncClient = _factory  # type: ignore[assignment]
-        try:
-            result = await scrape_url(
-                ScrapeUrlQuery(url="https://example.com/page")
-            )
-        finally:
-            httpx.AsyncClient = original  # type: ignore[assignment]
+        monkeypatch.setattr(httpx, "AsyncClient", _factory)
+        result = await scrape_url(_q("https://example.com/page"))
 
         assert result.text == "ok"
         assert len(constructed_clients) == 1
@@ -172,9 +180,7 @@ class TestHttpFailureResponses:
     async def test_http_status_error_captures_status_code(self) -> None:
         response = MagicMock()
         response.status_code = 404
-        error = httpx.HTTPStatusError(
-            "not found", request=MagicMock(), response=response
-        )
+        error = httpx.HTTPStatusError("not found", request=MagicMock(), response=response)
         client = _fake_client(html="", raise_for_status=error)
         # Also make `response.status_code` accessible via the mocked
         # response returned from `.get`; simulate this by wiring the
@@ -188,7 +194,7 @@ class TestHttpFailureResponses:
         )
 
         result = await scrape_url(
-            ScrapeUrlQuery(url="https://example.com/missing"),
+            _q("https://example.com/missing"),
             client=client,
         )
 
@@ -204,7 +210,7 @@ class TestTransportFailures:
     async def test_timeout_is_captured_as_error(self) -> None:
         client = _fake_client(raise_on_get=httpx.TimeoutException("read timed out"))
         result = await scrape_url(
-            ScrapeUrlQuery(url="https://slow.example.com"),
+            _q("https://slow.example.com"),
             client=client,
         )
         assert result.text == ""
@@ -215,7 +221,7 @@ class TestTransportFailures:
     async def test_connection_error_is_captured_as_error(self) -> None:
         client = _fake_client(raise_on_get=httpx.ConnectError("dns failure"))
         result = await scrape_url(
-            ScrapeUrlQuery(url="https://bad.example.com"),
+            _q("https://bad.example.com"),
             client=client,
         )
         assert result.error is not None
@@ -224,7 +230,7 @@ class TestTransportFailures:
     async def test_unexpected_exception_is_captured_as_error(self) -> None:
         client = _fake_client(raise_on_get=RuntimeError("kernel panic"))
         result = await scrape_url(
-            ScrapeUrlQuery(url="https://example.com"),
+            _q("https://example.com"),
             client=client,
         )
         assert result.error is not None
@@ -241,7 +247,7 @@ class TestTruncation:
         client = _fake_client(html=html)
 
         result = await scrape_url(
-            ScrapeUrlQuery(url="https://example.com"),
+            _q("https://example.com"),
             client=client,
             max_chars=50,
         )

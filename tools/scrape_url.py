@@ -45,10 +45,7 @@ _STRIPPABLE_TAGS: Final[tuple[str, ...]] = (
     "iframe",
 )
 _HEADERS: Final[dict[str, str]] = {
-    "User-Agent": (
-        "Mozilla/5.0 (compatible; PlanSmartAssistant/1.0; "
-        "+https://plansmart.live)"
-    ),
+    "User-Agent": ("Mozilla/5.0 (compatible; PlanSmartAssistant/1.0; +https://plansmart.live)"),
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     "Accept-Language": "en-US,en;q=0.9",
 }
@@ -126,9 +123,7 @@ async def scrape_url(
             response = await active_client.get(url_str)
             response.raise_for_status()
         except httpx.HTTPStatusError as exc:
-            message = (
-                f"HTTP {exc.response.status_code} from {url_str}"
-            )
+            message = f"HTTP {exc.response.status_code} from {url_str}"
             _logger.warning("Scrape rejected: %s", message)
             return ScrapeUrlResult(
                 url=url_str,
@@ -147,7 +142,9 @@ async def scrape_url(
                 truncated=False,
                 error=message,
             )
-        except Exception as exc:  # noqa: BLE001 — unknown errors must reach the LLM
+        except Exception as exc:
+            # Any unexpected fault is captured on the result's error field
+            # rather than raised, so the agent loop never crashes.
             message = f"{type(exc).__name__}: {exc}"
             _logger.warning("Scrape failed for %s: %s", url_str, message)
             return ScrapeUrlResult(

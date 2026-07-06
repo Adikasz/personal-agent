@@ -98,9 +98,7 @@ class TestNoteSchemaValidation:
 class TestSaveNoteHappyPath:
     """`save_note` writes a well-formed markdown file and returns metadata."""
 
-    def test_writes_file_with_expected_name(
-        self, tmp_path: Path, fixed_today: date
-    ) -> None:
+    def test_writes_file_with_expected_name(self, tmp_path: Path, fixed_today: date) -> None:
         note = NoteSchema(slug="standup", content="body")
         result = save_note(note, base_dir=tmp_path, today=fixed_today)
 
@@ -121,12 +119,8 @@ class TestSaveNoteHappyPath:
         assert "slug: notes" in text
         assert text.rstrip().endswith("body")
 
-    def test_tags_render_as_yaml_list(
-        self, tmp_path: Path, fixed_today: date
-    ) -> None:
-        note = NoteSchema(
-            slug="tagged", content="body", tags=["one", "two-parts"]
-        )
+    def test_tags_render_as_yaml_list(self, tmp_path: Path, fixed_today: date) -> None:
+        note = NoteSchema(slug="tagged", content="body", tags=["one", "two-parts"])
         result = save_note(note, base_dir=tmp_path, today=fixed_today)
         text = result.path.read_text(encoding="utf-8")
 
@@ -134,27 +128,21 @@ class TestSaveNoteHappyPath:
         assert "  - one" in text
         assert "  - two-parts" in text
 
-    def test_omits_tags_key_when_no_tags(
-        self, tmp_path: Path, fixed_today: date
-    ) -> None:
+    def test_omits_tags_key_when_no_tags(self, tmp_path: Path, fixed_today: date) -> None:
         note = NoteSchema(slug="plain", content="body")
         result = save_note(note, base_dir=tmp_path, today=fixed_today)
         text = result.path.read_text(encoding="utf-8")
 
         assert "tags:" not in text
 
-    def test_creates_missing_directories(
-        self, tmp_path: Path, fixed_today: date
-    ) -> None:
+    def test_creates_missing_directories(self, tmp_path: Path, fixed_today: date) -> None:
         nested = tmp_path / "deep" / "nested" / "notes"
         assert not nested.exists()
         note = NoteSchema(slug="s", content="c")
         save_note(note, base_dir=nested, today=fixed_today)
         assert nested.is_dir()
 
-    def test_returns_correct_byte_count(
-        self, tmp_path: Path, fixed_today: date
-    ) -> None:
+    def test_returns_correct_byte_count(self, tmp_path: Path, fixed_today: date) -> None:
         note = NoteSchema(slug="s", content="c")
         result = save_note(note, base_dir=tmp_path, today=fixed_today)
         assert result.bytes_written == result.path.stat().st_size
@@ -163,9 +151,7 @@ class TestSaveNoteHappyPath:
 class TestCollisionSuffix:
     """Existing files must never be silently overwritten."""
 
-    def test_second_save_gets_dash_one_suffix(
-        self, tmp_path: Path, fixed_today: date
-    ) -> None:
+    def test_second_save_gets_dash_one_suffix(self, tmp_path: Path, fixed_today: date) -> None:
         note = NoteSchema(slug="dup", content="first")
         first = save_note(note, base_dir=tmp_path, today=fixed_today)
 
@@ -195,16 +181,12 @@ class TestCollisionSuffix:
 class TestReturnValue:
     """`SaveNoteResult` must be a frozen, well-typed metadata record."""
 
-    def test_result_is_a_pydantic_model(
-        self, tmp_path: Path, fixed_today: date
-    ) -> None:
+    def test_result_is_a_pydantic_model(self, tmp_path: Path, fixed_today: date) -> None:
         note = NoteSchema(slug="s", content="c")
         result = save_note(note, base_dir=tmp_path, today=fixed_today)
         assert isinstance(result, SaveNoteResult)
 
-    def test_result_is_frozen(
-        self, tmp_path: Path, fixed_today: date
-    ) -> None:
+    def test_result_is_frozen(self, tmp_path: Path, fixed_today: date) -> None:
         note = NoteSchema(slug="s", content="c")
         result = save_note(note, base_dir=tmp_path, today=fixed_today)
         with pytest.raises(ValidationError):

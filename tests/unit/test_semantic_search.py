@@ -35,9 +35,7 @@ def _fake_store(
     if embedding_error is not None:
         store.generate_embedding = AsyncMock(side_effect=embedding_error)
     else:
-        store.generate_embedding = AsyncMock(
-            return_value=embedding or [0.1, 0.2, 0.3]
-        )
+        store.generate_embedding = AsyncMock(return_value=embedding or [0.1, 0.2, 0.3])
     if search_error is not None:
         store.semantic_search = AsyncMock(side_effect=search_error)
     else:

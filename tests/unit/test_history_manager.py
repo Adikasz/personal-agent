@@ -12,9 +12,25 @@ factories declared at the top of this file are required.
 
 from __future__ import annotations
 
-from typing import Any
+from collections.abc import Sequence
+from typing import Any, cast
 
-from utils.history_manager import trim_history
+from anthropic.types import MessageParam
+
+from utils.history_manager import trim_history as _run_trim
+
+
+def _trim(messages: list[dict[str, Any]], max_messages: int) -> list[dict[str, Any]]:
+    """Typed bridge around ``trim_history``.
+
+    The factories below emit plain, message-shaped dicts on purpose: the
+    trimmer is exercised structurally, including deliberately malformed
+    shapes. The production function speaks the strict ``MessageParam``
+    TypedDict, so the cast is localized to this single chokepoint instead
+    of being scattered across every call site. No behavior changes.
+    """
+    result = _run_trim(cast("Sequence[MessageParam]", messages), max_messages)
+    return cast("list[dict[str, Any]]", result)
 
 
 # ---------------------------------------------------------------------------
@@ -107,8 +123,7 @@ def _assert_no_split_pair(result: list[dict[str, Any]]) -> None:
             if isinstance(block, dict) and block.get("type") == "tool_result"
         }
         assert tool_use_ids <= result_ids, (
-            f"tool_use ids {tool_use_ids} missing matching tool_result ids "
-            f"(found {result_ids})"
+            f"tool_use ids {tool_use_ids} missing matching tool_result ids (found {result_ids})"
         )
 
 
@@ -163,25 +178,25 @@ def _assert_all_invariants(result: list[dict[str, Any]], max_messages: int) -> N
 
 class TestBounds:
     def test_empty_input_returns_empty(self) -> None:
-        assert trim_history([], 5) == []
+        assert _trim([], 5) == []
 
     def test_zero_max_returns_empty(self) -> None:
-        assert trim_history([_user("hi")], 0) == []
+        assert _trim([_user("hi")], 0) == []
 
     def test_negative_max_returns_empty(self) -> None:
-        assert trim_history([_user("hi"), _assistant_text("hey")], -3) == []
+        assert _trim([_user("hi"), _assistant_text("hey")], -3) == []
 
     def test_under_limit_returns_unchanged_when_leading_is_user(self) -> None:
         messages = [_user("q"), _assistant_text("a")]
-        assert trim_history(messages, 5) == messages
+        assert _trim(messages, 5) == messages
 
     def test_at_limit_returns_unchanged_when_leading_is_user(self) -> None:
         messages = [_user("q"), _assistant_text("a")]
-        assert trim_history(messages, 2) == messages
+        assert _trim(messages, 2) == messages
 
     def test_result_length_never_exceeds_max(self) -> None:
         messages = [_user(f"q{index}") for index in range(10)]
-        result = trim_history(messages, 3)
+        result = _trim(messages, 3)
         assert len(result) <= 3
 
     def test_input_list_is_not_mutated(self) -> None:
@@ -192,7 +207,7 @@ class TestBounds:
             _assistant_text("a2"),
         ]
         snapshot = [dict(message) for message in messages]
-        trim_history(messages, 2)
+        _trim(messages, 2)
         assert messages == snapshot
 
 
@@ -209,21 +224,21 @@ class TestLeadingUserInvariant:
             _user("q2"),
             _assistant_text("a2"),
         ]
-        result = trim_history(messages, 3)
+        result = _trim(messages, 3)
         assert result[0]["role"] == "user"
         _assert_all_invariants(result, 3)
 
     def test_result_is_empty_when_no_user_head_fits(self) -> None:
         messages = [_user("q"), _assistant_text("a"), _assistant_text("a2")]
-        assert trim_history(messages, 1) == []
+        assert _trim(messages, 1) == []
 
     def test_all_assistant_input_is_fully_dropped(self) -> None:
         messages = [_assistant_text("a1"), _assistant_text("a2")]
-        assert trim_history(messages, 5) == []
+        assert _trim(messages, 5) == []
 
     def test_leading_user_invariant_enforced_even_when_under_limit(self) -> None:
         messages = [_assistant_text("orphan"), _user("q"), _assistant_text("a")]
-        result = trim_history(messages, 10)
+        result = _trim(messages, 10)
         assert result == [_user("q"), _assistant_text("a")]
 
 
@@ -240,7 +255,7 @@ class TestPairPreservation:
             _user_tool_result("tu_1"),
             _assistant_text("saved."),
         ]
-        result = trim_history(messages, 10)
+        result = _trim(messages, 10)
         assert result == messages
         _assert_all_invariants(result, 10)
 
@@ -251,7 +266,7 @@ class TestPairPreservation:
             _user_tool_result("tu_1"),
             _assistant_text("done"),
         ]
-        result = trim_history(messages, 3)
+        result = _trim(messages, 3)
         # A naive tail-3 slice would return
         # [assistant_tool_use, user_tool_result, assistant_text],
         # which violates leading-user AND the API pair rule. The trimmer
@@ -279,7 +294,7 @@ class TestPairPreservation:
             ],
         }
         messages = [_user("q"), multi_use, multi_result, _assistant_text("done")]
-        result = trim_history(messages, 10)
+        result = _trim(messages, 10)
         assert result == messages
         _assert_all_invariants(result, 10)
 
@@ -299,7 +314,7 @@ class TestPairPreservation:
             ],
         }
         messages = [_user("q"), multi_use, multi_result, _assistant_text("done")]
-        result = trim_history(messages, 3)
+        result = _trim(messages, 3)
         _assert_all_invariants(result, 3)
 
     def test_assistant_message_with_text_and_tool_use_treated_as_pair(self) -> None:
@@ -309,7 +324,7 @@ class TestPairPreservation:
             _user_tool_result("tu_1"),
             _assistant_text("done"),
         ]
-        result = trim_history(messages, 10)
+        result = _trim(messages, 10)
         assert result == messages
         _assert_all_invariants(result, 10)
 
@@ -325,7 +340,7 @@ class TestPairPreservation:
             _assistant_text("a2"),
         ]
         for cap in range(0, len(messages) + 3):
-            result = trim_history(messages, cap)
+            result = _trim(messages, cap)
             _assert_all_invariants(result, cap)
 
 
@@ -340,7 +355,7 @@ class TestOrderPreservation:
             _user(f"q{index}") if index % 2 == 0 else _assistant_text(f"a{index}")
             for index in range(6)
         ]
-        result = trim_history(messages, 4)
+        result = _trim(messages, 4)
         indices = [messages.index(message) for message in result]
         assert indices == sorted(indices)
 
@@ -356,7 +371,7 @@ class TestUnpairedInput:
         # valid intermediate state that the caller must be free to
         # inspect before dispatching the tool call.
         messages = [_user("q"), _assistant_tool_use("tu_1")]
-        result = trim_history(messages, 5)
+        result = _trim(messages, 5)
         assert result == messages
 
     def test_unpaired_tool_use_at_head_is_dropped(self) -> None:
@@ -365,13 +380,15 @@ class TestUnpairedInput:
             _assistant_text("a1"),
             _assistant_tool_use("tu_orphan"),
         ]
-        result = trim_history(messages, 2)
+        result = _trim(messages, 2)
         # A dangling assistant tool_use with no matching tool_result
         # cannot be a valid conversation head; the trimmer must drop it.
         for message in result:
-            assert message["role"] == "user" or not isinstance(
-                message["content"], list
-            ) or not any(
-                isinstance(block, dict) and block.get("type") == "tool_use"
-                for block in message["content"]
+            assert (
+                message["role"] == "user"
+                or not isinstance(message["content"], list)
+                or not any(
+                    isinstance(block, dict) and block.get("type") == "tool_use"
+                    for block in message["content"]
+                )
             )

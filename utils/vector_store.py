@@ -90,7 +90,7 @@ class VectorStore:
                 model=self._settings.openai_embedding_model,
                 input=text,
             )
-        except Exception as exc:  # noqa: BLE001 — every OpenAI fault becomes VectorStoreError
+        except Exception as exc:
             self._logger.warning("OpenAI embedding failed: %s", exc)
             raise VectorStoreError(f"OpenAI embedding failed: {exc}") from exc
 
@@ -98,9 +98,7 @@ class VectorStore:
             vector = list(response.data[0].embedding)
         except (AttributeError, IndexError, TypeError) as exc:
             self._logger.warning("OpenAI response was malformed: %s", exc)
-            raise VectorStoreError(
-                f"OpenAI response was malformed: {exc}"
-            ) from exc
+            raise VectorStoreError(f"OpenAI response was malformed: {exc}") from exc
 
         self._logger.info("Generated %d-dimensional embedding.", len(vector))
         return vector
@@ -123,7 +121,7 @@ class VectorStore:
                 top_k=top_k,
                 include_metadata=True,
             )
-        except Exception as exc:  # noqa: BLE001 — Pinecone faults become VectorStoreError
+        except Exception as exc:
             self._logger.warning("Pinecone query failed: %s", exc)
             raise VectorStoreError(f"Pinecone query failed: {exc}") from exc
 
@@ -160,7 +158,7 @@ class VectorStore:
         ]
         try:
             await asyncio.to_thread(self._index.upsert, vectors=payload)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self._logger.warning("Pinecone upsert failed: %s", exc)
             raise VectorStoreError(f"Pinecone upsert failed: {exc}") from exc
 

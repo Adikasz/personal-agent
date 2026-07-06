@@ -61,9 +61,7 @@ class TestPathTraversalAttacks:
         with pytest.raises(SecurityError):
             resolve_within_project("../..", project_root=tmp_path)
 
-    def test_dotdot_after_a_legitimate_segment_still_escapes(
-        self, tmp_path: Path
-    ) -> None:
+    def test_dotdot_after_a_legitimate_segment_still_escapes(self, tmp_path: Path) -> None:
         with pytest.raises(SecurityError):
             resolve_within_project("a/../../outside", project_root=tmp_path)
 
@@ -77,9 +75,7 @@ class TestAbsolutePathsAreRefused:
         with pytest.raises(SecurityError):
             resolve_within_project(str(Path.home()))
 
-    def test_project_root_expressed_as_absolute_is_still_refused(
-        self, tmp_path: Path
-    ) -> None:
+    def test_project_root_expressed_as_absolute_is_still_refused(self, tmp_path: Path) -> None:
         # Even an absolute path that *would* resolve inside the sandbox
         # is refused: the LLM's contract is "relative only."
         with pytest.raises(SecurityError):
@@ -101,9 +97,7 @@ class TestMalformedInputs:
 class TestSymlinkEscape:
     """A symlink that points outside the sandbox must be caught."""
 
-    def test_symlink_leading_out_of_the_root_is_refused(
-        self, tmp_path: Path
-    ) -> None:
+    def test_symlink_leading_out_of_the_root_is_refused(self, tmp_path: Path) -> None:
         # Build two sibling roots: the sandbox, and an "outside" area.
         sandbox = tmp_path / "sandbox"
         outside = tmp_path / "outside"

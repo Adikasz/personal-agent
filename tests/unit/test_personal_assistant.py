@@ -21,19 +21,13 @@ from tools.save_note import NoteSchema, SaveNoteResult
 @pytest.fixture
 def knowledge_dir(tmp_path: Path) -> Path:
     """Create a temporary knowledge directory with two markdown files."""
-    (tmp_path / "one.md").write_text(
-        "# One\nFirst knowledge chunk.", encoding="utf-8"
-    )
-    (tmp_path / "two.md").write_text(
-        "# Two\nSecond knowledge chunk.", encoding="utf-8"
-    )
+    (tmp_path / "one.md").write_text("# One\nFirst knowledge chunk.", encoding="utf-8")
+    (tmp_path / "two.md").write_text("# Two\nSecond knowledge chunk.", encoding="utf-8")
     return tmp_path
 
 
 @pytest.fixture
-def settings(
-    knowledge_dir: Path, monkeypatch: pytest.MonkeyPatch
-) -> Settings:
+def settings(knowledge_dir: Path, monkeypatch: pytest.MonkeyPatch) -> Settings:
     """Build a `Settings` instance pointing at the temporary knowledge dir."""
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test-key")
     monkeypatch.setenv("KNOWLEDGE_DIR", str(knowledge_dir))
@@ -43,9 +37,7 @@ def settings(
 class TestKnowledgeLoading:
     """The assistant must embed every markdown file into its system prompt."""
 
-    def test_system_prompt_contains_all_knowledge_files(
-        self, settings: Settings
-    ) -> None:
+    def test_system_prompt_contains_all_knowledge_files(self, settings: Settings) -> None:
         with patch("agents.personal_assistant.AsyncAnthropic"):
             assistant = PersonalAssistant(settings=settings)
 
@@ -73,9 +65,7 @@ class TestKnowledgeLoading:
 class TestAsk:
     """The async `ask` method must call the SDK correctly and parse the reply."""
 
-    async def test_ask_returns_concatenated_text_blocks(
-        self, settings: Settings
-    ) -> None:
+    async def test_ask_returns_concatenated_text_blocks(self, settings: Settings) -> None:
         response = SimpleNamespace(
             content=[
                 SimpleNamespace(type="text", text="Hello "),
@@ -85,9 +75,7 @@ class TestAsk:
         )
 
         with patch("agents.personal_assistant.AsyncAnthropic") as client_cls:
-            client_cls.return_value.messages.create = AsyncMock(
-                return_value=response
-            )
+            client_cls.return_value.messages.create = AsyncMock(return_value=response)
             assistant = PersonalAssistant(settings=settings, tools=())
             reply = await assistant.ask("Hi there")
 
@@ -98,14 +86,10 @@ class TestAsk:
         call_kwargs = create.await_args.kwargs
         assert call_kwargs["model"] == settings.anthropic_model
         assert call_kwargs["max_tokens"] == settings.anthropic_max_tokens
-        assert call_kwargs["messages"] == [
-            {"role": "user", "content": "Hi there"}
-        ]
+        assert call_kwargs["messages"] == [{"role": "user", "content": "Hi there"}]
         assert call_kwargs["system"] == assistant._system_prompt
 
-    async def test_ask_ignores_non_text_content_blocks(
-        self, settings: Settings
-    ) -> None:
+    async def test_ask_ignores_non_text_content_blocks(self, settings: Settings) -> None:
         response = SimpleNamespace(
             content=[
                 SimpleNamespace(type="tool_use", text="ignored"),
@@ -115,23 +99,17 @@ class TestAsk:
         )
 
         with patch("agents.personal_assistant.AsyncAnthropic") as client_cls:
-            client_cls.return_value.messages.create = AsyncMock(
-                return_value=response
-            )
+            client_cls.return_value.messages.create = AsyncMock(return_value=response)
             assistant = PersonalAssistant(settings=settings, tools=())
             reply = await assistant.ask("prompt")
 
         assert reply == "only this"
 
-    async def test_ask_uses_the_secret_api_key(
-        self, settings: Settings
-    ) -> None:
+    async def test_ask_uses_the_secret_api_key(self, settings: Settings) -> None:
         response = _text_response("ok")
 
         with patch("agents.personal_assistant.AsyncAnthropic") as client_cls:
-            client_cls.return_value.messages.create = AsyncMock(
-                return_value=response
-            )
+            client_cls.return_value.messages.create = AsyncMock(return_value=response)
             PersonalAssistant(settings=settings, tools=())
 
         client_cls.assert_called_once_with(api_key="sk-test-key")
@@ -167,9 +145,7 @@ def _tool_use_response(
 class TestConversationHistory:
     """Multi-turn state is preserved across `ask()` calls."""
 
-    async def test_first_ask_produces_user_and_assistant_pair(
-        self, settings: Settings
-    ) -> None:
+    async def test_first_ask_produces_user_and_assistant_pair(self, settings: Settings) -> None:
         with patch("agents.personal_assistant.AsyncAnthropic") as client_cls:
             client_cls.return_value.messages.create = AsyncMock(
                 return_value=_text_response("hi back")
@@ -182,13 +158,9 @@ class TestConversationHistory:
             {"role": "assistant", "content": "hi back"},
         ]
 
-    async def test_second_ask_includes_previous_turn(
-        self, settings: Settings
-    ) -> None:
+    async def test_second_ask_includes_previous_turn(self, settings: Settings) -> None:
         with patch("agents.personal_assistant.AsyncAnthropic") as client_cls:
-            create = AsyncMock(
-                side_effect=[_text_response("reply1"), _text_response("reply2")]
-            )
+            create = AsyncMock(side_effect=[_text_response("reply1"), _text_response("reply2")])
             client_cls.return_value.messages.create = create
             assistant = PersonalAssistant(settings=settings, tools=())
             await assistant.ask("q1")
@@ -201,13 +173,9 @@ class TestConversationHistory:
             {"role": "user", "content": "q2"},
         ]
 
-    async def test_history_property_returns_defensive_copy(
-        self, settings: Settings
-    ) -> None:
+    async def test_history_property_returns_defensive_copy(self, settings: Settings) -> None:
         with patch("agents.personal_assistant.AsyncAnthropic") as client_cls:
-            client_cls.return_value.messages.create = AsyncMock(
-                return_value=_text_response("ok")
-            )
+            client_cls.return_value.messages.create = AsyncMock(return_value=_text_response("ok"))
             assistant = PersonalAssistant(settings=settings, tools=())
             await assistant.ask("hi")
 
@@ -217,9 +185,7 @@ class TestConversationHistory:
 
     async def test_reset_clears_history(self, settings: Settings) -> None:
         with patch("agents.personal_assistant.AsyncAnthropic") as client_cls:
-            client_cls.return_value.messages.create = AsyncMock(
-                return_value=_text_response("ok")
-            )
+            client_cls.return_value.messages.create = AsyncMock(return_value=_text_response("ok"))
             assistant = PersonalAssistant(settings=settings, tools=())
             await assistant.ask("hi")
             assert len(assistant.history) == 2
@@ -227,13 +193,9 @@ class TestConversationHistory:
             assistant.reset()
             assert assistant.history == []
 
-    async def test_history_unchanged_when_api_call_raises(
-        self, settings: Settings
-    ) -> None:
+    async def test_history_unchanged_when_api_call_raises(self, settings: Settings) -> None:
         with patch("agents.personal_assistant.AsyncAnthropic") as client_cls:
-            client_cls.return_value.messages.create = AsyncMock(
-                side_effect=RuntimeError("boom")
-            )
+            client_cls.return_value.messages.create = AsyncMock(side_effect=RuntimeError("boom"))
             assistant = PersonalAssistant(settings=settings, tools=())
             with pytest.raises(RuntimeError):
                 await assistant.ask("this will fail")
@@ -417,9 +379,7 @@ class TestToolUseLoop:
         assert error_carrier["content"][0]["is_error"] is True
         assert "ValidationError" in error_carrier["content"][0]["content"]
 
-    async def test_unknown_tool_is_returned_as_error(
-        self, settings: Settings
-    ) -> None:
+    async def test_unknown_tool_is_returned_as_error(self, settings: Settings) -> None:
         with patch("agents.personal_assistant.AsyncAnthropic") as client_cls:
             create = AsyncMock(
                 side_effect=[
@@ -461,11 +421,12 @@ class TestToolUseLoop:
             ),
         )
 
-        infinite_tool_use = lambda counter: _tool_use_response(  # noqa: E731
-            f"tu_{counter}",
-            "save_note",
-            {"slug": "loop", "content": "again", "tags": []},
-        )
+        def infinite_tool_use(counter: int) -> SimpleNamespace:
+            return _tool_use_response(
+                f"tu_{counter}",
+                "save_note",
+                {"slug": "loop", "content": "again", "tags": []},
+            )
 
         with patch("agents.personal_assistant.AsyncAnthropic") as client_cls:
             client_cls.return_value.messages.create = AsyncMock(
@@ -509,15 +470,11 @@ class TestToolUseLoop:
 
         assert history[1]["role"] == "assistant"
         assert isinstance(history[1]["content"], list)
-        assert any(
-            block.get("type") == "tool_use" for block in history[1]["content"]
-        )
+        assert any(block.get("type") == "tool_use" for block in history[1]["content"])
 
         assert history[2]["role"] == "user"
         assert isinstance(history[2]["content"], list)
-        assert any(
-            block.get("type") == "tool_result" for block in history[2]["content"]
-        )
+        assert any(block.get("type") == "tool_result" for block in history[2]["content"])
 
         assert history[3] == {"role": "assistant", "content": "Done."}
 

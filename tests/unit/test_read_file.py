@@ -96,9 +96,7 @@ class TestErrorCases:
                 project_root=sandbox,
             )
 
-    def test_reading_a_directory_raises_is_a_directory(
-        self, sandbox: Path
-    ) -> None:
+    def test_reading_a_directory_raises_is_a_directory(self, sandbox: Path) -> None:
         with pytest.raises(IsADirectoryError):
             read_file(
                 ReadFileQuery(filepath="child"),
@@ -146,9 +144,7 @@ class TestTruncationAndDecoding:
         assert result.bytes_read == 50
         assert result.content == "x" * 50
 
-    def test_non_utf8_bytes_are_replaced_not_raised(
-        self, tmp_path: Path
-    ) -> None:
+    def test_non_utf8_bytes_are_replaced_not_raised(self, tmp_path: Path) -> None:
         (tmp_path / "garbage.bin").write_bytes(b"good\xff\xfebad")
         result = read_file(
             ReadFileQuery(filepath="garbage.bin"),

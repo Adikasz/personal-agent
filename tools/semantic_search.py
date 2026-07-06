@@ -58,8 +58,7 @@ class SemanticSearchQuery(BaseModel):
         min_length=1,
         max_length=_MAX_QUERY_LENGTH,
         description=(
-            "Natural-language query embedded and matched against the "
-            "Pinecone vector store."
+            "Natural-language query embedded and matched against the Pinecone vector store."
         ),
     )
     top_k: int = Field(

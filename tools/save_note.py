@@ -85,9 +85,7 @@ class NoteSchema(BaseModel):
     @classmethod
     def _slug_is_kebab_case(cls, value: str) -> str:
         if not _SLUG_PATTERN.fullmatch(value):
-            raise ValueError(
-                "slug must be lowercase kebab-case, e.g. 'q3-planning-notes'"
-            )
+            raise ValueError("slug must be lowercase kebab-case, e.g. 'q3-planning-notes'")
         return value
 
     @field_validator("tags")

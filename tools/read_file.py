@@ -97,13 +97,9 @@ def read_file(
     """
     resolved = resolve_within_project(query.filepath, project_root=project_root)
     if not resolved.exists():
-        raise FileNotFoundError(
-            f"{query.filepath!r} does not exist inside the project root."
-        )
+        raise FileNotFoundError(f"{query.filepath!r} does not exist inside the project root.")
     if resolved.is_dir():
-        raise IsADirectoryError(
-            f"{query.filepath!r} is a directory; use list_directory instead."
-        )
+        raise IsADirectoryError(f"{query.filepath!r} is a directory; use list_directory instead.")
 
     limit = max_bytes if max_bytes is not None else DEFAULT_MAX_BYTES
     size = resolved.stat().st_size

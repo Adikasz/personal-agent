@@ -70,14 +70,11 @@ def resolve_within_project(
     supplied = Path(text)
     if supplied.is_absolute():
         raise SecurityError(
-            "Absolute paths are refused; supply a path relative to the "
-            f"project root. Got: {text!r}"
+            f"Absolute paths are refused; supply a path relative to the project root. Got: {text!r}"
         )
 
     root = (project_root if project_root is not None else PROJECT_ROOT).resolve()
     resolved = (root / supplied).resolve()
     if not resolved.is_relative_to(root):
-        raise SecurityError(
-            f"Path {text!r} escapes the project root {root!s}."
-        )
+        raise SecurityError(f"Path {text!r} escapes the project root {root!s}.")
     return resolved
