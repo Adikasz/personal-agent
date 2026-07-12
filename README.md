@@ -21,17 +21,17 @@
 
 ## 1. Executive Summary
 
-**PlanSmart** is a production-grade, single-operator CLI agent that acts as a Personal Career & Operations Strategist for a founder pursuing $50+/hr remote AI Engineer roles and scaling an automation agency.
+**PlanSmart** is a production-grade, single-operator CLI agent engineered to automate strategic research, competitive analysis, and complex operational workflows.
 
-It is **not** a chatbot wrapped around an LLM. It is a **deterministic reasoning system** built on the **WAT (Workflows, Agents, Tools)** framework, with hard boundaries between the layer that *decides* (Agent), the layer that *acts* (Tools), and the layer that *governs* (Workflows / SOPs).
+It is not a simple chatbot wrapped around an LLM. It is a deterministic reasoning system built on the WAT (Workflows, Agents, Tools) architecture, establishing strict boundaries between the layer that decides (Agent), the layer that acts (Tools), and the layer that governs (Workflows / SOPs).
 
 The agent chains three institutional capabilities on every turn:
 
 | Capability | Concrete Effect |
 | --- | --- |
-| **Deterministic Workflows** | Codified SOPs for career-critical tasks (job analysis, morning briefing, note recall). No prompt drift. |
-| **Asynchronous Web Senses** | Live DuckDuckGo search + clean URL scraping, dispatched off the event loop. |
-| **Enterprise Memory (RAG)** | OpenAI-embedded, Pinecone-persisted long-term context. Semantic recall over prior work, résumé fragments, and researched articles. |
+| **Deterministic Workflows** | Codified SOPs for high-leverage operations (market analysis, daily briefings, automated research). Eliminates prompt drift and ensures predictable outputs. |
+| **Asynchronous Web Senses** | Live DuckDuckGo search + clean URL scraping, dispatched off the event loop for rapid OSINT (Open Source Intelligence) gathering. |
+| **Enterprise Memory (RAG)** | OpenAI-embedded, Pinecone-persisted long-term context. Enables semantic recall over prior tasks, corporate documentation, and external knowledge bases. |
 
 ### The Business Case
 
