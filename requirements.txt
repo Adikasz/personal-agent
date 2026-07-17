@@ -13,7 +13,7 @@ mcp>=1.2.0
 tavily-python>=0.5.0
 
 # --- Enterprise memory (RAG + embeddings) ---
-openai>=1.50.0
+openai>=2.46.0
 # NOTE: The official Pinecone SDK was renamed from `pinecone-client` to
 # `pinecone` in the 5.x line. The 6.x `pinecone-client` package is now a
 # no-op shim that raises on import, so we depend on `pinecone` directly.
