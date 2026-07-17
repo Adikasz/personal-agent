@@ -18,11 +18,14 @@ discard the accumulated conversation history without restarting.
 from __future__ import annotations
 
 import asyncio
+import logging
 import sys
+from contextlib import AsyncExitStack
 from typing import Any, Final
 
 from agents.personal_assistant import PersonalAssistant
-from core.config import get_settings
+from core.config import Settings, get_settings
+from mcp_integration.client import TavilyMCPClient
 from utils.logger import configure_logging, get_logger
 
 _RESET_COMMANDS: Final[frozenset[str]] = frozenset({"/reset", "/clear"})
@@ -58,21 +61,32 @@ def _on_tool_result(name: str, output: str, is_error: bool) -> None:
     _emit("[agent]", f"tool {name} {tag}: {_shorten(output)}")
 
 
-async def _run() -> None:
-    """Async REPL that forwards user input to the assistant."""
-    settings = get_settings()
-    # In interactive mode we keep the terminal clean by suppressing the
-    # structured logger below WARNING. Chat narration is emitted directly
-    # via `_emit`, which never routes through the logger.
-    configure_logging(level="WARNING")
-    logger = get_logger("main")
+async def _connect_mcp(
+    stack: AsyncExitStack,
+    assistant: PersonalAssistant,
+    settings: Settings,
+    logger: logging.Logger,
+) -> None:
+    """Best-effort MCP startup: register Tavily tools or degrade gracefully.
 
-    assistant = PersonalAssistant(settings=settings)
+    Failure to spawn or initialize the MCP server must never stop the
+    assistant from running with its local tools, so any exception is
+    logged and reported here rather than propagated. The client is
+    entered into ``stack`` so its subprocess is torn down when the REPL
+    exits.
+    """
+    try:
+        client = await stack.enter_async_context(TavilyMCPClient(settings))
+        await assistant.register_mcp_tools(client)
+    except Exception:
+        logger.exception("Tavily MCP startup failed; continuing with local tools only.")
+        _emit("[system]", "Tavily MCP unavailable; continuing with local tools only.")
+    else:
+        _emit("[system]", "Tavily MCP server connected.")
 
-    _emit(
-        "[system]",
-        "PlanSmart assistant online. /reset to clear history, empty line to quit.",
-    )
+
+async def _repl(assistant: PersonalAssistant, logger: logging.Logger) -> None:
+    """Read-eval-print loop that forwards user input to the assistant."""
     loop = asyncio.get_running_loop()
 
     while True:
@@ -107,6 +121,26 @@ async def _run() -> None:
             continue
 
         _emit("agent >", reply)
+
+
+async def _run() -> None:
+    """Wire up the assistant (with MCP tools) and run the REPL."""
+    settings = get_settings()
+    # In interactive mode we keep the terminal clean by suppressing the
+    # structured logger below WARNING. Chat narration is emitted directly
+    # via `_emit`, which never routes through the logger.
+    configure_logging(level="WARNING")
+    logger = get_logger("main")
+
+    async with AsyncExitStack() as stack:
+        assistant = PersonalAssistant(settings=settings)
+        await _connect_mcp(stack, assistant, settings, logger)
+
+        _emit(
+            "[system]",
+            "PlanSmart assistant online. /reset to clear history, empty line to quit.",
+        )
+        await _repl(assistant, logger)
 
 
 def main() -> None:

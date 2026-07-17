@@ -85,6 +85,13 @@ exclude = ['^build/', '^dist/']
 module = ["anthropic.*"]
 ignore_missing_imports = true
 
+# The MCP SDK ships types but its transport internals surface `Any`; the
+# Tavily SDK ships no stubs at all. Be lenient at both boundaries so the
+# strict gate stays meaningful for our own code.
+[[tool.mypy.overrides]]
+module = ["mcp.*", "tavily.*"]
+ignore_missing_imports = true
+
 # Pydantic-settings supports the private `_env_file` kwarg at runtime but does
 # not expose it in its type stubs. Allow it in tests without scattering
 # per-line ignores.

@@ -54,6 +54,15 @@ class Settings(BaseSettings):
         default="plansmart",
         description="Pinecone index name used for vector storage.",
     )
+
+    tavily_api_key: SecretStr = Field(
+        ...,
+        description=(
+            "API key used to authenticate against Tavily. Injected into the "
+            "environment of the stdio MCP server subprocess so the "
+            "`tavily_search` tool can reach the Tavily API."
+        ),
+    )
     anthropic_max_tokens: int = Field(
         default=2048,
         gt=0,

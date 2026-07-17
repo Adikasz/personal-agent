@@ -29,13 +29,14 @@ import inspect
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Final, cast
+from typing import Any, Final, Protocol, cast
 
 from anthropic import AsyncAnthropic
 from anthropic.types import ContentBlockParam, MessageParam, ToolResultBlockParam
 from pydantic import BaseModel
 
 from core.config import Settings, get_settings
+from mcp_integration.types import MCPToolProvider
 from tools.index_document import IndexDocumentQuery, index_document
 from tools.list_directory import ListDirectoryQuery, list_directory
 from tools.read_file import ReadFileQuery, read_file
@@ -55,14 +56,95 @@ OnToolUse = Callable[[str, dict[str, Any]], None]
 OnToolResult = Callable[[str, str, bool], None]
 
 
+class AgentTool(Protocol):
+    """The uniform tool interface the assistant dispatches against.
+
+    Both local pydantic tools (:class:`ToolSpec`) and remote MCP tools
+    (:class:`MCPTool`) satisfy this protocol, so the tool-use loop treats
+    them identically: publish ``input_schema()`` to the model, then
+    ``run()`` the selected call and place the returned string into the
+    ``tool_result`` block.
+
+    ``name`` and ``description`` are declared read-only so that frozen
+    dataclasses (whose attributes are immutable) structurally satisfy the
+    protocol; a plain ``name: str`` would demand a settable attribute.
+    """
+
+    @property
+    def name(self) -> str:
+        """The tool's unique identifier, as advertised to the model."""
+        ...
+
+    @property
+    def description(self) -> str:
+        """A short natural-language description shown to the model."""
+        ...
+
+    def input_schema(self) -> dict[str, Any]:
+        """Return the JSON schema advertised to the Anthropic API."""
+        ...
+
+    async def run(self, tool_input: dict[str, Any]) -> str:
+        """Execute the tool for ``tool_input`` and return its text output."""
+        ...
+
+
 @dataclass(frozen=True)
 class ToolSpec:
-    """Registration entry that binds an LLM-facing tool to its schema."""
+    """Registration entry that binds a local, pydantic-backed tool to its schema.
+
+    Implements the :class:`AgentTool` protocol: the assistant validates
+    the model's raw JSON payload against ``schema`` before handing a typed
+    object to ``call``, then serializes whatever ``call`` returns into a
+    string for the ``tool_result`` block.
+    """
 
     name: str
     description: str
     schema: type[BaseModel]
     call: ToolCallable
+
+    def input_schema(self) -> dict[str, Any]:
+        """Return the JSON schema advertised to the Anthropic API."""
+        return self.schema.model_json_schema()
+
+    async def run(self, tool_input: dict[str, Any]) -> str:
+        """Validate ``tool_input``, invoke the tool, and serialize its output.
+
+        A :class:`pydantic.ValidationError` raised here propagates to the
+        assistant's dispatcher, which surfaces it to the model as an
+        ``is_error`` result. Both synchronous and coroutine-returning
+        callables are supported transparently.
+        """
+        validated = self.schema.model_validate(tool_input)
+        raw_output = self.call(validated)
+        if inspect.isawaitable(raw_output):
+            raw_output = await raw_output
+        return _serialize_tool_output(raw_output)
+
+
+@dataclass(frozen=True)
+class MCPTool:
+    """An MCP-server-provided tool adapted to the :class:`AgentTool` protocol.
+
+    Unlike :class:`ToolSpec`, the input schema is a raw JSON schema dict
+    supplied by the server (there is no local pydantic model), and
+    execution is delegated to the MCP client, which validates arguments
+    server-side and returns already-rendered text.
+    """
+
+    name: str
+    description: str
+    json_schema: dict[str, Any]
+    provider: MCPToolProvider
+
+    def input_schema(self) -> dict[str, Any]:
+        """Return the server-advertised JSON schema for the tool."""
+        return self.json_schema
+
+    async def run(self, tool_input: dict[str, Any]) -> str:
+        """Route the call through the MCP client and return its text output."""
+        return await self.provider.call_tool(self.name, tool_input)
 
 
 def _default_tools() -> tuple[ToolSpec, ...]:
@@ -177,13 +259,13 @@ class PersonalAssistant:
         self,
         settings: Settings | None = None,
         *,
-        tools: Sequence[ToolSpec] | None = None,
+        tools: Sequence[AgentTool] | None = None,
     ) -> None:
         self._settings = settings or get_settings()
         self._logger = get_logger(self.__class__.__name__)
         self._client = AsyncAnthropic(api_key=self._settings.anthropic_api_key.get_secret_value())
         registered = tuple(tools) if tools is not None else _default_tools()
-        self._tools: dict[str, ToolSpec] = {spec.name: spec for spec in registered}
+        self._tools: dict[str, AgentTool] = {spec.name: spec for spec in registered}
         self._system_prompt: str = self._build_system_prompt()
         self._history: list[MessageParam] = []
 
@@ -199,6 +281,36 @@ class PersonalAssistant:
             len(self._history),
         )
         self._history.clear()
+
+    async def register_mcp_tools(self, provider: MCPToolProvider) -> None:
+        """Discover tools from an MCP provider and add them to the registry.
+
+        Construction is synchronous, but MCP discovery is async, so this
+        is called after ``__init__`` (typically once, at startup). Each
+        advertised tool becomes an :class:`MCPTool` routed through
+        ``provider``. A tool whose name collides with an already-registered
+        local tool is skipped, so the deterministic local implementation
+        always wins. The system prompt is rebuilt only when at least one
+        tool is added, so its manifest reflects the new capabilities.
+        """
+        added = 0
+        for info in await provider.list_tools():
+            if info.name in self._tools:
+                self._logger.warning(
+                    "MCP tool %r shadows a registered tool; keeping the local one.",
+                    info.name,
+                )
+                continue
+            self._tools[info.name] = MCPTool(
+                name=info.name,
+                description=info.description,
+                json_schema=info.input_schema,
+                provider=provider,
+            )
+            added += 1
+        if added:
+            self._system_prompt = self._build_system_prompt()
+        self._logger.info("Registered %d MCP tool(s).", added)
 
     async def ask(
         self,
@@ -283,11 +395,11 @@ class PersonalAssistant:
     def _build_tool_definitions(self) -> list[dict[str, Any]]:
         return [
             {
-                "name": spec.name,
-                "description": spec.description,
-                "input_schema": spec.schema.model_json_schema(),
+                "name": tool.name,
+                "description": tool.description,
+                "input_schema": tool.input_schema(),
             }
-            for spec in self._tools.values()
+            for tool in self._tools.values()
         ]
 
     def _assistant_message(self, blocks: list[Any]) -> MessageParam:
@@ -362,14 +474,10 @@ class PersonalAssistant:
             )
 
         try:
-            spec = self._tools.get(tool_name)
-            if spec is None:
+            tool = self._tools.get(tool_name)
+            if tool is None:
                 raise ValueError(f"Unknown tool: {tool_name!r}")
-            validated = spec.schema.model_validate(tool_input)
-            raw_output = spec.call(validated)
-            if inspect.isawaitable(raw_output):
-                raw_output = await raw_output
-            output_str = _serialize_tool_output(raw_output)
+            output_str = await tool.run(tool_input)
             self._logger.info("Tool %s returned successfully.", tool_name)
             if on_tool_result is not None:
                 _safe_callback(
