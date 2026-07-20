@@ -6,6 +6,7 @@ network I/O and can run in any CI environment without secrets.
 
 from __future__ import annotations
 
+from datetime import datetime, tzinfo
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -15,6 +16,7 @@ import pytest
 
 from agents.personal_assistant import PersonalAssistant, ToolSpec
 from core.config import Settings
+from tests.conftest import FROZEN_NOW
 from tools.save_note import NoteSchema, SaveNoteResult
 
 
@@ -87,7 +89,10 @@ class TestAsk:
         assert call_kwargs["model"] == settings.anthropic_model
         assert call_kwargs["max_tokens"] == settings.anthropic_max_tokens
         assert call_kwargs["messages"] == [{"role": "user", "content": "Hi there"}]
-        assert call_kwargs["system"] == assistant._system_prompt
+        # The static prompt is sent verbatim with the dynamic temporal
+        # anchor appended after it.
+        assert call_kwargs["system"].startswith(assistant._system_prompt)
+        assert "Current System Time:" in call_kwargs["system"]
 
     async def test_ask_ignores_non_text_content_blocks(self, settings: Settings) -> None:
         response = SimpleNamespace(
@@ -121,6 +126,63 @@ def _text_response(text: str) -> SimpleNamespace:
         content=[SimpleNamespace(type="text", text=text)],
         stop_reason="end_turn",
     )
+
+
+class TestTemporalAnchor:
+    """Every API call carries a fresh `Current System Time` anchor."""
+
+    async def test_sent_system_prompt_contains_the_frozen_timestamp(
+        self, settings: Settings
+    ) -> None:
+        with patch("agents.personal_assistant.AsyncAnthropic") as client_cls:
+            create = AsyncMock(return_value=_text_response("ok"))
+            client_cls.return_value.messages.create = create
+            assistant = PersonalAssistant(settings=settings, tools=())
+            await assistant.ask("hi")
+
+        system = create.await_args_list[0].kwargs["system"]
+        expected = (
+            f"Current System Time: {FROZEN_NOW.isoformat()}. "
+            "Use this as your temporal anchor for all queries."
+        )
+        assert system.endswith(expected)
+
+    def test_cached_static_prompt_carries_no_timestamp(self, settings: Settings) -> None:
+        with patch("agents.personal_assistant.AsyncAnthropic"):
+            assistant = PersonalAssistant(settings=settings, tools=())
+        assert "Current System Time:" not in assistant._system_prompt
+
+    async def test_anchor_is_recomputed_on_every_api_call(
+        self, settings: Settings, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Two sequential asks must observe two different clock readings,
+        proving the anchor is evaluated per call rather than captured at
+        construction time."""
+        ticks = iter(
+            [
+                datetime(2026, 7, 17, 8, 0, 0),
+                datetime(2026, 7, 17, 9, 30, 0),
+            ]
+        )
+
+        class _TickingClock:
+            @staticmethod
+            def now(tz: tzinfo | None = None) -> datetime:
+                return next(ticks)
+
+        monkeypatch.setattr("agents.personal_assistant.datetime", _TickingClock)
+
+        with patch("agents.personal_assistant.AsyncAnthropic") as client_cls:
+            create = AsyncMock(side_effect=[_text_response("r1"), _text_response("r2")])
+            client_cls.return_value.messages.create = create
+            assistant = PersonalAssistant(settings=settings, tools=())
+            await assistant.ask("q1")
+            await assistant.ask("q2")
+
+        first = create.await_args_list[0].kwargs["system"]
+        second = create.await_args_list[1].kwargs["system"]
+        assert "Current System Time: 2026-07-17T08:00:00." in first
+        assert "Current System Time: 2026-07-17T09:30:00." in second
 
 
 def _tool_use_response(

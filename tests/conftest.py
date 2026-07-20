@@ -10,15 +10,57 @@ exercise the missing-key path can override the defaults with
 
 from __future__ import annotations
 
+import sqlite3
 from collections.abc import Iterator, Sequence
+from datetime import datetime, tzinfo
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, Self
 from unittest.mock import AsyncMock
 
 import pytest
 
 from core.config import get_settings
 from mcp_integration.types import MCPToolError, MCPToolInfo
+
+#: The single timestamp every test observes. Tests that assert on the
+#: temporal anchor import this constant instead of hard-coding strings.
+FROZEN_NOW: datetime = datetime(2026, 7, 17, 12, 0, 0)
+
+
+class _FrozenDatetime(datetime):
+    """`datetime` subclass whose `now()` is pinned to `FROZEN_NOW`.
+
+    Patched over `agents.personal_assistant.datetime` so the temporal
+    anchor injected into the system prompt is deterministic. Subclassing
+    (rather than a bare stub) keeps every other `datetime` behavior —
+    arithmetic, formatting, comparisons — fully intact for any code that
+    receives one of these instances.
+    """
+
+    @classmethod
+    def now(cls, tz: tzinfo | None = None) -> Self:
+        return cls(
+            FROZEN_NOW.year,
+            FROZEN_NOW.month,
+            FROZEN_NOW.day,
+            FROZEN_NOW.hour,
+            FROZEN_NOW.minute,
+            FROZEN_NOW.second,
+            tzinfo=tz,
+        )
+
+
+@pytest.fixture(autouse=True)
+def _frozen_datetime(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Freeze `datetime.now()` inside the assistant module for every test.
+
+    The patch is applied at the consuming module's seam
+    (`agents.personal_assistant.datetime`), not globally, so stdlib and
+    third-party code keep the real clock while the temporal anchor stays
+    deterministic under the suite's warnings-as-errors regime.
+    """
+    monkeypatch.setattr("agents.personal_assistant.datetime", _FrozenDatetime)
+
 
 _ENV_VARS_UNDER_TEST: tuple[str, ...] = (
     "ANTHROPIC_API_KEY",
@@ -33,6 +75,7 @@ _ENV_VARS_UNDER_TEST: tuple[str, ...] = (
     "PINECONE_API_KEY",
     "PINECONE_INDEX_NAME",
     "TAVILY_API_KEY",
+    "MEMORY_DB_PATH",
 )
 
 _INJECTED_DEFAULTS: dict[str, str] = {
@@ -182,3 +225,44 @@ def mock_mcp_transport(
     monkeypatch.setattr("mcp_integration.client.stdio_client", fake_stdio_client)
     monkeypatch.setattr("mcp_integration.client.ClientSession", fake_client_session)
     return mcp_session
+
+
+# ---------------------------------------------------------------------------
+# Memory-server SQLite doubles
+#
+# The offline-CI contract forbids real database files, so the persistent-
+# memory server is exercised against an in-process SQLite database:
+#
+#   * `memory_db` — a schema-initialized `sqlite3.Connection` to ":memory:",
+#     for tests that inject a connection directly.
+#   * `mock_memory_db` — patches `mcp_integration.memory_server._get_connection`
+#     to return that same connection, so the decorated MCP tools run against
+#     the in-memory database with no filesystem access.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def memory_db() -> Iterator[sqlite3.Connection]:
+    """Yield a schema-initialized in-memory SQLite connection."""
+    from mcp_integration.memory_server import _init_schema
+
+    conn = sqlite3.connect(":memory:")
+    _init_schema(conn)
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+
+@pytest.fixture
+def mock_memory_db(
+    monkeypatch: pytest.MonkeyPatch,
+    memory_db: sqlite3.Connection,
+) -> sqlite3.Connection:
+    """Patch the memory server's connection factory to use the in-memory DB.
+
+    Returns the connection so tests can assert directly against the stored
+    rows after driving the tools.
+    """
+    monkeypatch.setattr("mcp_integration.memory_server._get_connection", lambda: memory_db)
+    return memory_db

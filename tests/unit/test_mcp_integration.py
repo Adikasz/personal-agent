@@ -160,3 +160,42 @@ class TestAskRoutesThroughMCP:
         assert results[0][2] is True
         assert "simulated" in results[0][1]
         assert "MCPToolError" in results[0][1]
+
+
+class TestMultipleMCPProviders:
+    """Tools from two servers (e.g. Tavily + memory) coexist and route independently."""
+
+    async def test_two_providers_register_and_dispatch_to_their_own_server(
+        self, settings: Settings
+    ) -> None:
+        web = FakeMCPProvider(
+            tools=[make_tool_info(name="tavily_search")],
+            responses={"tavily_search": "web hit"},
+        )
+        memory = FakeMCPProvider(
+            tools=[
+                make_tool_info(name="store_fact"),
+                make_tool_info(name="retrieve_context"),
+            ],
+            responses={"store_fact": "stored", "retrieve_context": "recalled"},
+        )
+
+        with patch("agents.personal_assistant.AsyncAnthropic"):
+            assistant = PersonalAssistant(settings=settings, tools=())
+            await assistant.register_mcp_tools(web)
+            await assistant.register_mcp_tools(memory)
+
+        names = {d["name"] for d in assistant._build_tool_definitions()}
+        assert {"tavily_search", "store_fact", "retrieve_context"} <= names
+
+        # Each MCPTool carries its own provider, so calls route to the
+        # server that advertised the tool — no shared routing table needed.
+        assert await assistant._tools["tavily_search"].run({"query": "x"}) == "web hit"
+        assert await assistant._tools["store_fact"].run({"entity": "e", "fact": "f"}) == "stored"
+        assert await assistant._tools["retrieve_context"].run({"query": "e"}) == "recalled"
+
+        assert web.calls == [("tavily_search", {"query": "x"})]
+        assert memory.calls == [
+            ("store_fact", {"entity": "e", "fact": "f"}),
+            ("retrieve_context", {"query": "e"}),
+        ]

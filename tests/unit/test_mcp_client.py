@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from mcp_integration.client import TavilyMCPClient
+from mcp_integration.client import MemoryMCPClient, TavilyMCPClient
 from mcp_integration.types import MCPToolError, MCPToolInfo
 from tests.conftest import make_call_tool_result
 
@@ -162,3 +162,29 @@ class TestCallTool:
     async def test_call_tool_before_connect_raises(self) -> None:
         with pytest.raises(MCPToolError, match="not connected"):
             await TavilyMCPClient().call_tool("tavily_search", {"query": "x"})
+
+
+class TestMemoryClient:
+    """`MemoryMCPClient` targets the memory server and shares the base plumbing."""
+
+    def test_parameters_target_the_memory_server_module(self) -> None:
+        params = MemoryMCPClient()._server_parameters()
+        assert params.command == sys.executable
+        assert params.args == ["-m", "mcp_integration.memory_server"]
+
+    def test_db_path_is_injected_into_subprocess_env(self) -> None:
+        params = MemoryMCPClient()._server_parameters()
+        assert params.env is not None
+        assert params.env["MEMORY_DB_PATH"].endswith("memory.db")
+        assert "PYTHONPATH" in params.env
+
+    async def test_shares_connect_and_call_plumbing_with_the_base(
+        self, mock_mcp_transport: SimpleNamespace
+    ) -> None:
+        mock_mcp_transport.call_tool = AsyncMock(
+            return_value=make_call_tool_result("Stored fact about 'David'.")
+        )
+        async with MemoryMCPClient() as client:
+            assert client.is_connected is True
+            out = await client.call_tool("store_fact", {"entity": "David", "fact": "founder"})
+        assert out == "Stored fact about 'David'."

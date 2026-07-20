@@ -98,11 +98,34 @@ class Settings(BaseSettings):
         default=PROJECT_ROOT / "knowledge",
         description="Directory containing the agent's knowledge base.",
     )
+    memory_db_path: Path = Field(
+        default=PROJECT_ROOT / ".data" / "memory.db",
+        description=(
+            "SQLite database file backing the persistent-memory MCP server. "
+            "Injected into that server's subprocess environment. The special "
+            "value ':memory:' selects an ephemeral in-process database."
+        ),
+    )
 
     @property
     def resolved_knowledge_dir(self) -> Path:
         """Return the knowledge directory as an absolute path."""
         path = self.knowledge_dir
+        if not path.is_absolute():
+            path = PROJECT_ROOT / path
+        return path.resolve()
+
+    @property
+    def resolved_memory_db_path(self) -> Path:
+        """Return the memory database path, absolute unless it is ':memory:'.
+
+        The in-memory sentinel is returned verbatim; every other value is
+        resolved against the project root so a relative override in `.env`
+        lands in a predictable location.
+        """
+        path = self.memory_db_path
+        if str(path) == ":memory:":
+            return path
         if not path.is_absolute():
             path = PROJECT_ROOT / path
         return path.resolve()

@@ -28,6 +28,7 @@ from __future__ import annotations
 import inspect
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Final, Protocol, cast
 
@@ -385,12 +386,26 @@ class PersonalAssistant:
         kwargs: dict[str, Any] = {
             "model": self._settings.anthropic_model,
             "max_tokens": self._settings.anthropic_max_tokens,
-            "system": self._system_prompt,
+            "system": self._system_with_temporal_anchor(),
             "messages": messages,
         }
         if self._tools:
             kwargs["tools"] = self._build_tool_definitions()
         return kwargs
+
+    def _system_with_temporal_anchor(self) -> str:
+        """Append the current system time to the cached system prompt.
+
+        The anchor is recomputed on every API call — not at construction —
+        so a long-lived REPL session never drifts. The static portion of
+        the prompt (persona, tool manifest, knowledge base) stays cached
+        in ``self._system_prompt``; only this line is dynamic.
+        """
+        anchor = (
+            f"Current System Time: {datetime.now().isoformat()}. "
+            "Use this as your temporal anchor for all queries."
+        )
+        return f"{self._system_prompt}\n\n{anchor}"
 
     def _build_tool_definitions(self) -> list[dict[str, Any]]:
         return [

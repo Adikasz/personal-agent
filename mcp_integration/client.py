@@ -1,14 +1,21 @@
-"""Stdio MCP client that spawns and drives the Tavily server subprocess.
+"""Stdio MCP clients that spawn and drive the local server subprocesses.
 
 WAT layer: **Tool** — deterministic transport plumbing with no LLM
-reasoning. ``TavilyMCPClient`` launches ``mcp_integration.tavily_server``
-as a child process over stdio, initializes an MCP session, and exposes
-the two operations the Agent layer needs: enumerate tools and invoke one
-by name. It satisfies :class:`mcp_integration.types.MCPToolProvider`.
+reasoning. :class:`StdioMCPClient` launches one MCP server as a child
+process over stdio, initializes a session, and exposes the two operations
+the Agent layer needs: enumerate tools and invoke one by name. It
+satisfies :class:`mcp_integration.types.MCPToolProvider`.
 
-Lifecycle is managed with a single :class:`contextlib.AsyncExitStack`,
-so ``connect()``/``aclose()`` (and ``async with``) tear down the session
-and the subprocess deterministically even if startup fails partway.
+Two concrete servers are provided:
+
+* :class:`TavilyMCPClient`  — ``mcp_integration.tavily_server`` (web search).
+* :class:`MemoryMCPClient`  — ``mcp_integration.memory_server`` (long-term memory).
+
+Both can run simultaneously; ``main.py`` enters each into a shared
+:class:`contextlib.AsyncExitStack` and registers the tools of both with
+the assistant. Each client owns a single :class:`AsyncExitStack`, so
+``connect()``/``aclose()`` (and ``async with``) tear down the session and
+the subprocess deterministically even if startup fails partway.
 """
 
 from __future__ import annotations
@@ -18,7 +25,7 @@ import sys
 from contextlib import AsyncExitStack
 from pathlib import Path
 from types import TracebackType
-from typing import Any, Final
+from typing import Any, Final, Self
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import get_default_environment, stdio_client
@@ -27,23 +34,29 @@ from core.config import Settings, get_settings
 from mcp_integration.types import MCPToolError, MCPToolInfo
 from utils.logger import get_logger
 
-__all__ = ["TavilyMCPClient"]
+__all__ = ["MemoryMCPClient", "StdioMCPClient", "TavilyMCPClient"]
 
 _PROJECT_ROOT: Final[Path] = Path(__file__).resolve().parent.parent
-_SERVER_MODULE: Final[str] = "mcp_integration.tavily_server"
+_TAVILY_MODULE: Final[str] = "mcp_integration.tavily_server"
+_MEMORY_MODULE: Final[str] = "mcp_integration.memory_server"
 
 
-class TavilyMCPClient:
-    """Manage a stdio MCP connection to the local Tavily server.
+class StdioMCPClient:
+    """Manage a stdio MCP connection to one local server subprocess.
 
-    The client is single-session: it spawns one subprocess on
-    ``connect()`` and closes it on ``aclose()``. Reconnecting requires a
-    fresh instance. Instances are async context managers, which is the
-    recommended usage::
+    Single-session: it spawns one subprocess on ``connect()`` and closes
+    it on ``aclose()``; reconnecting requires a fresh instance. Instances
+    are async context managers, which is the recommended usage::
 
         async with TavilyMCPClient(settings) as client:
             tools = await client.list_tools()
+
+    Subclasses implement :meth:`_server_parameters` to describe which
+    server to launch and which environment it needs.
     """
+
+    #: Human-readable server label used in log lines and error messages.
+    _LABEL: str = "MCP"
 
     def __init__(self, settings: Settings | None = None) -> None:
         self._settings = settings or get_settings()
@@ -56,25 +69,31 @@ class TavilyMCPClient:
         """Return whether an initialized MCP session is available."""
         return self._session is not None
 
-    def _server_parameters(self) -> StdioServerParameters:
-        """Describe how to launch the Tavily server subprocess.
+    def _base_env(self) -> dict[str, str]:
+        """Return a minimal, OS-appropriate environment for the subprocess.
 
-        The child inherits a minimal, OS-appropriate environment plus the
-        Tavily key and a ``PYTHONPATH`` entry for the project root so
-        ``python -m mcp_integration.tavily_server`` resolves regardless of
-        the parent's working directory.
+        A ``PYTHONPATH`` entry for the project root is added so
+        ``python -m mcp_integration.<server>`` resolves regardless of the
+        parent's working directory.
         """
         env = get_default_environment()
         env["PYTHONPATH"] = os.pathsep.join(
             filter(None, [str(_PROJECT_ROOT), env.get("PYTHONPATH", "")])
         )
-        env["TAVILY_API_KEY"] = self._settings.tavily_api_key.get_secret_value()
+        return env
+
+    def _params_for(self, module: str, env: dict[str, str]) -> StdioServerParameters:
+        """Build launch parameters for ``python -m <module>``."""
         return StdioServerParameters(
             command=sys.executable,
-            args=["-m", _SERVER_MODULE],
+            args=["-m", module],
             env=env,
             cwd=str(_PROJECT_ROOT),
         )
+
+    def _server_parameters(self) -> StdioServerParameters:
+        """Describe how to launch this client's server subprocess."""
+        raise NotImplementedError
 
     async def connect(self) -> None:
         """Spawn the server and initialize the MCP session.
@@ -100,16 +119,16 @@ class TavilyMCPClient:
             self._session = None
             raise
         self._session = session
-        self._logger.info("Connected to the Tavily MCP server over stdio.")
+        self._logger.info("Connected to the %s MCP server over stdio.", self._LABEL)
 
     async def aclose(self) -> None:
         """Close the MCP session and terminate the server subprocess."""
         await self._exit_stack.aclose()
         self._exit_stack = AsyncExitStack()
         self._session = None
-        self._logger.info("Tavily MCP client closed.")
+        self._logger.info("%s MCP client closed.", self._LABEL)
 
-    async def __aenter__(self) -> TavilyMCPClient:
+    async def __aenter__(self) -> Self:
         await self.connect()
         return self
 
@@ -123,11 +142,11 @@ class TavilyMCPClient:
 
     def _require_session(self) -> ClientSession:
         if self._session is None:
-            raise MCPToolError("Tavily MCP client is not connected; call connect() first.")
+            raise MCPToolError(f"{self._LABEL} MCP client is not connected; call connect() first.")
         return self._session
 
     async def list_tools(self) -> list[MCPToolInfo]:
-        """Return the tools advertised by the connected Tavily server."""
+        """Return the tools advertised by the connected server."""
         session = self._require_session()
         result = await session.list_tools()
         infos = [
@@ -138,7 +157,7 @@ class TavilyMCPClient:
             )
             for tool in result.tools
         ]
-        self._logger.debug("MCP server advertised %d tool(s).", len(infos))
+        self._logger.debug("%s MCP server advertised %d tool(s).", self._LABEL, len(infos))
         return infos
 
     async def call_tool(self, name: str, arguments: dict[str, Any]) -> str:
@@ -154,6 +173,28 @@ class TavilyMCPClient:
         if bool(getattr(result, "isError", False)):
             raise MCPToolError(text or f"MCP tool {name!r} reported an error.")
         return text
+
+
+class TavilyMCPClient(StdioMCPClient):
+    """Stdio client for the Tavily web-search MCP server."""
+
+    _LABEL = "Tavily"
+
+    def _server_parameters(self) -> StdioServerParameters:
+        env = self._base_env()
+        env["TAVILY_API_KEY"] = self._settings.tavily_api_key.get_secret_value()
+        return self._params_for(_TAVILY_MODULE, env)
+
+
+class MemoryMCPClient(StdioMCPClient):
+    """Stdio client for the persistent-memory MCP server."""
+
+    _LABEL = "Memory"
+
+    def _server_parameters(self) -> StdioServerParameters:
+        env = self._base_env()
+        env["MEMORY_DB_PATH"] = str(self._settings.resolved_memory_db_path)
+        return self._params_for(_MEMORY_MODULE, env)
 
 
 def _extract_text(content: Any) -> str:

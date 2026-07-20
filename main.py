@@ -25,7 +25,7 @@ from typing import Any, Final
 
 from agents.personal_assistant import PersonalAssistant
 from core.config import Settings, get_settings
-from mcp_integration.client import TavilyMCPClient
+from mcp_integration.client import MemoryMCPClient, StdioMCPClient, TavilyMCPClient
 from utils.logger import configure_logging, get_logger
 
 _RESET_COMMANDS: Final[frozenset[str]] = frozenset({"/reset", "/clear"})
@@ -67,22 +67,26 @@ async def _connect_mcp(
     settings: Settings,
     logger: logging.Logger,
 ) -> None:
-    """Best-effort MCP startup: register Tavily tools or degrade gracefully.
+    """Spawn every MCP server simultaneously and register their tools.
 
-    Failure to spawn or initialize the MCP server must never stop the
-    assistant from running with its local tools, so any exception is
-    logged and reported here rather than propagated. The client is
-    entered into ``stack`` so its subprocess is torn down when the REPL
-    exits.
+    Each server is started best-effort and independently: a failure to
+    spawn or initialize one (missing key, subprocess crash) never stops
+    the others or the assistant's local tools. Every client is entered
+    into ``stack`` so all subprocesses are torn down when the REPL exits.
     """
-    try:
-        client = await stack.enter_async_context(TavilyMCPClient(settings))
-        await assistant.register_mcp_tools(client)
-    except Exception:
-        logger.exception("Tavily MCP startup failed; continuing with local tools only.")
-        _emit("[system]", "Tavily MCP unavailable; continuing with local tools only.")
-    else:
-        _emit("[system]", "Tavily MCP server connected.")
+    clients: list[tuple[str, StdioMCPClient]] = [
+        ("Tavily", TavilyMCPClient(settings)),
+        ("Memory", MemoryMCPClient(settings)),
+    ]
+    for label, client in clients:
+        try:
+            connected = await stack.enter_async_context(client)
+            await assistant.register_mcp_tools(connected)
+        except Exception:
+            logger.exception("%s MCP startup failed; continuing without it.", label)
+            _emit("[system]", f"{label} MCP unavailable; continuing without it.")
+        else:
+            _emit("[system]", f"{label} MCP server connected.")
 
 
 async def _repl(assistant: PersonalAssistant, logger: logging.Logger) -> None:

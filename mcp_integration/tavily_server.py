@@ -18,7 +18,7 @@ suite can exercise the search logic offline by injecting a fake client.
 from __future__ import annotations
 
 import os
-from typing import Any, Final
+from typing import Any, Final, Literal
 
 from mcp.server.fastmcp import FastMCP
 from tavily import TavilyClient
@@ -28,6 +28,10 @@ DEFAULT_MAX_RESULTS: Final[int] = 5
 _ABSOLUTE_MAX_RESULTS: Final[int] = 20
 _MAX_CONTENT_CHARS: Final[int] = 600
 _SEARCH_DEPTH: Final[str] = "basic"
+DEFAULT_TOPIC: Final[str] = "general"
+DEFAULT_NEWS_DAYS: Final[int] = 7
+_MAX_NEWS_DAYS: Final[int] = 30
+_VALID_TOPICS: Final[tuple[str, ...]] = ("general", "news")
 
 mcp = FastMCP(
     "plansmart-tavily",
@@ -92,6 +96,8 @@ def _format_results(payload: dict[str, Any], query: str) -> str:
 def _search(
     query: str,
     max_results: int,
+    topic: str = DEFAULT_TOPIC,
+    days: int = DEFAULT_NEWS_DAYS,
     *,
     client: TavilyClient | None = None,
 ) -> str:
@@ -100,6 +106,12 @@ def _search(
     Args:
         query: The user's search query.
         max_results: Requested result count; clamped to ``[1, 20]``.
+        topic: Either ``"general"`` (default) or ``"news"``. In news mode
+            the ``topic`` and ``days`` parameters are forwarded to Tavily
+            so only strictly recent articles are returned; in general
+            mode neither is sent, preserving the original behavior.
+        days: Recency window in days for news mode; clamped to
+            ``[1, 30]``. Ignored when ``topic`` is ``"general"``.
         client: Test-only injection point for a fake Tavily client. When
             omitted, a real client is built from the environment.
 
@@ -110,16 +122,22 @@ def _search(
     trimmed = query.strip()
     if not trimmed:
         return "Tavily search failed: query must contain non-whitespace text."
+    if topic not in _VALID_TOPICS:
+        return f"Tavily search failed: unsupported topic {topic!r}; use 'general' or 'news'."
 
     capped = max(1, min(max_results, _ABSOLUTE_MAX_RESULTS))
+    search_kwargs: dict[str, Any] = {
+        "max_results": capped,
+        "search_depth": _SEARCH_DEPTH,
+        "include_answer": True,
+    }
+    if topic == "news":
+        search_kwargs["topic"] = "news"
+        search_kwargs["days"] = max(1, min(days, _MAX_NEWS_DAYS))
+
     try:
         active = client if client is not None else _build_client()
-        payload = active.search(
-            trimmed,
-            max_results=capped,
-            search_depth=_SEARCH_DEPTH,
-            include_answer=True,
-        )
+        payload = active.search(trimmed, **search_kwargs)
     except Exception as exc:
         # A search or configuration failure is surfaced to the model as
         # ordinary tool output, never raised, mirroring the local tools.
@@ -131,23 +149,35 @@ def _search(
 
 
 @mcp.tool()
-def tavily_search(query: str, max_results: int = DEFAULT_MAX_RESULTS) -> str:
+def tavily_search(
+    query: str,
+    max_results: int = DEFAULT_MAX_RESULTS,
+    topic: Literal["general", "news"] = "general",
+    days: int = DEFAULT_NEWS_DAYS,
+) -> str:
     """Search the public web via Tavily and return ranked, summarized results.
 
     Use this when the user asks about current events, external facts, or
     anything the local knowledge base and notes cannot answer. Returns a
     short synthesized summary followed by the top sources (title, URL,
-    and a snippet). Search or configuration failures come back as a
-    string beginning with "Tavily search failed:" — never as an
-    exception — so read that message and adjust rather than retrying
-    blindly.
+    and a snippet). For time-sensitive questions (breaking news, "what
+    happened this week", latest releases) pass ``topic="news"`` and set
+    ``days`` to the recency window you need — this forces strictly
+    recent articles instead of evergreen pages. Search or configuration
+    failures come back as a string beginning with "Tavily search
+    failed:" — never as an exception — so read that message and adjust
+    rather than retrying blindly.
 
     Args:
         query: The natural-language search query.
         max_results: Maximum number of source results to return
             (1 to 20, default 5).
+        topic: "general" for evergreen web search (default) or "news"
+            for strictly recent news coverage.
+        days: How many days back news results may reach (1 to 30,
+            default 7). Only applies when topic is "news".
     """
-    return _search(query, max_results)
+    return _search(query, max_results, topic, days)
 
 
 def main() -> None:

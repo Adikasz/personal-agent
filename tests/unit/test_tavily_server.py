@@ -16,6 +16,7 @@ import pytest
 from mcp_integration import tavily_server
 from mcp_integration.tavily_server import (
     DEFAULT_MAX_RESULTS,
+    DEFAULT_NEWS_DAYS,
     _search,
     tavily_search,
 )
@@ -61,6 +62,42 @@ class TestSearchValidation:
         assert record["max_results"] == 3
         assert record["include_answer"] is True
         assert record["search_depth"] == "basic"
+
+
+class TestNewsMode:
+    """`topic="news"` forces recency; `"general"` preserves old behavior."""
+
+    def test_news_topic_forwards_topic_and_days(self) -> None:
+        record: dict[str, Any] = {}
+        _search("ai news", 5, "news", 3, client=_FakeTavily({"results": []}, record=record))
+        assert record["topic"] == "news"
+        assert record["days"] == 3
+
+    def test_general_topic_sends_neither_topic_nor_days(self) -> None:
+        record: dict[str, Any] = {}
+        _search("evergreen", 5, "general", 3, client=_FakeTavily({"results": []}, record=record))
+        assert "topic" not in record
+        assert "days" not in record
+
+    def test_days_is_clamped_to_upper_bound(self) -> None:
+        record: dict[str, Any] = {}
+        _search("x", 5, "news", 999, client=_FakeTavily({"results": []}, record=record))
+        assert record["days"] == 30
+
+    def test_days_is_clamped_to_lower_bound(self) -> None:
+        record: dict[str, Any] = {}
+        _search("x", 5, "news", 0, client=_FakeTavily({"results": []}, record=record))
+        assert record["days"] == 1
+
+    def test_unsupported_topic_is_rejected_before_any_network_call(self) -> None:
+        record: dict[str, Any] = {}
+        out = _search("x", 5, "finance", 7, client=_FakeTavily({"results": []}, record=record))
+        assert out.startswith("Tavily search failed:")
+        assert "unsupported topic" in out
+        assert record == {}  # the client was never invoked
+
+    def test_default_news_days_constant(self) -> None:
+        assert DEFAULT_NEWS_DAYS == 7
 
 
 class TestSearchFormatting:
@@ -133,11 +170,19 @@ class TestToolSurface:
         properties = by_name["tavily_search"].inputSchema["properties"]
         assert "query" in properties
         assert "max_results" in properties
+        assert "topic" in properties
+        assert "days" in properties
+
+    async def test_topic_schema_is_restricted_to_general_and_news(self) -> None:
+        tools = await tavily_server.mcp.list_tools()
+        by_name = {tool.name: tool for tool in tools}
+        topic_schema = by_name["tavily_search"].inputSchema["properties"]["topic"]
+        assert set(topic_schema.get("enum", [])) == {"general", "news"}
 
     def test_tool_delegates_to_search_helper(self) -> None:
         with patch.object(tavily_server, "_search", return_value="stub") as search_mock:
-            assert tavily_search("hello", 3) == "stub"
-        search_mock.assert_called_once_with("hello", 3)
+            assert tavily_search("hello", 3, "news", 2) == "stub"
+        search_mock.assert_called_once_with("hello", 3, "news", 2)
 
     def test_default_max_results_constant(self) -> None:
         assert DEFAULT_MAX_RESULTS == 5

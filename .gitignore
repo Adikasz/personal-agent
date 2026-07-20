@@ -42,3 +42,6 @@ logs/
 
 # --- Local WAT Agent Data ---
 .tmp/
+
+# --- Persistent memory (SQLite MCP store) ---
+.data/
